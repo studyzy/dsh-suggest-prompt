@@ -95,8 +95,8 @@ export interface Config {
   readonly maxOutputTokens: number
   /** End-to-end auxiliary request deadline in milliseconds. */
   readonly timeoutMs: number
-  /** Transcript tail keeps at most this many recent completed turns. */
-  readonly maxRecentTurns: number
+  /** Transcript tail keeps at most this many recent completed turns (default 1: only the last completed turn). */
+  readonly maxRecentTurns?: number
   /** Transcript tail character budget before JSON framing. */
   readonly maxTranscriptChars: number
   /** Visible-character cap for the generated suggestion. */
@@ -117,7 +117,7 @@ export const Config: z<Config> = z.object({
   maxInputBytes: z.number().step(1).min(1).required(),
   maxOutputTokens: z.number().step(1).min(1).required(),
   timeoutMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).required(),
-  maxRecentTurns: z.number().step(1).min(1).required(),
+  maxRecentTurns: z.number().step(1).min(1).default(1),
   maxTranscriptChars: z.number().step(1).min(1).required(),
   maxSuggestionChars: z.number().step(1).min(1).required(),
   provider: z.string(),

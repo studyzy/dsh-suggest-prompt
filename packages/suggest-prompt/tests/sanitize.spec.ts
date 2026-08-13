@@ -4,7 +4,11 @@ import { hasCJK, redactSecrets, sanitizeSuggestion, shouldFilterSuggestion } fro
 describe('redactSecrets', () => {
   it('masks AWS, OpenAI, GitHub, Slack, JWT, and Stripe secret shapes', () => {
     // Secret-shaped fixtures are assembled at runtime so the source never
-    // contains a literal credential pattern (GitHub secret scanning).
+    // contains a literal credential pattern (GitHub secret scanning). The
+    // template form is deliberate: it keeps the credential shape out of the
+    // source text, which is exactly why the "unnecessary template" lint does
+    // not apply here.
+    /* oxlint-disable no-unnecessary-template-expression */
     const awsKey = `AKIA${'1234567890ABCDEF'}`
     const skToken = `sk-${'abcdefghijklmnopqrstuvwxyz1234567890'}`
     const ghp = `ghp_${'A'.repeat(40)}`
@@ -12,6 +16,7 @@ describe('redactSecrets', () => {
     const xoxb = `xoxb-${'1234567890-abcdefghijkl'}`
     const jwt = ['eyJhbGciOiJIUzI1NiJ9', 'eyJzdWIiOiIxMjM0NTY3ODkwIn0', 'dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U'].join('.')
     const stripe = `rk_live_${'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'}`
+    /* oxlint-enable no-unnecessary-template-expression */
     expect(redactSecrets(`aws ${awsKey} end`)).toContain('<aws-access-key-id>')
     expect(redactSecrets(skToken)).toBe('<secret-token>')
     expect(redactSecrets(ghp)).toBe('<github-token>')

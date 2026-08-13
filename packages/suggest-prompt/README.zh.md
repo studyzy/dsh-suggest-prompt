@@ -13,7 +13,7 @@
 | `maxInputBytes` | 最终框架化用户提示的最大 UTF-8 字节数 |
 | `maxOutputTokens` | 辅助生成输出令牌上限 |
 | `timeoutMs` | 辅助请求端到端截止时间（毫秒） |
-| `maxRecentTurns` | 转录尾部保留的最近完成回合数 |
+| `maxRecentTurns` | 转录尾部保留的最近完成回合数（默认为 1：只取最后一轮的用户输入与 AI 最终回答） |
 | `maxTranscriptChars` | 转录尾部框架化前的字符预算 |
 | `maxSuggestionChars` | 生成建议的可见字符上限 |
 | `provider` / `model` | 可选显式路由对；同时省略则继承会话日志中最近的主请求路由 |
@@ -33,7 +33,7 @@
 
 #### 模型看到的内容
 
-建议模型会收到一条指令：将其绑定为以用户自己的口吻预测下一条提示词，禁止生成内容或元文本，并给出具体的正例与反例；指令还会让回复语言与会话一致（最后一条用户消息含 CJK 文本时为 `简体中文`，否则为 `English`）。对话尾部以带标签的 `[User Message]` / `[Assistant Response]` 块呈现（已脱敏，受 `maxRecentTurns` 与 `maxTranscriptChars` 约束）；确切框架化输入与系统提示在派发前记录于 `suggest-prompt/request` 事件。
+建议模型会收到一条指令：将其绑定为以用户自己的口吻预测下一条提示词，禁止生成内容或元文本，并给出具体的正例与反例；指令还会让回复语言与会话一致（最后一条用户消息含 CJK 文本时为 `简体中文`，否则为 `English`）。对话尾部以带标签的 `[User Message]` / `[Assistant Response]` 块呈现——默认只取最后一轮（用户输入 + AI 最终回答），或将 `maxRecentTurns` 调高于默认值 1 时取最近多个回合，已脱敏并受 `maxTranscriptChars` 约束；确切框架化输入与系统提示在派发前记录于 `suggest-prompt/request` 事件。
 
 #### Token 影响
 

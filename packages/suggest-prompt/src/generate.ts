@@ -64,7 +64,7 @@ export function resolveSuggestPromptConfig(config: Config): ResolvedSuggestPromp
   assertPositiveInteger('maxInputBytes', value.maxInputBytes)
   assertPositiveInteger('maxOutputTokens', value.maxOutputTokens)
   assertPositiveInteger('timeoutMs', value.timeoutMs)
-  assertPositiveInteger('maxRecentTurns', value.maxRecentTurns)
+  if (value.maxRecentTurns !== undefined) assertPositiveInteger('maxRecentTurns', value.maxRecentTurns)
   assertPositiveInteger('maxTranscriptChars', value.maxTranscriptChars)
   assertPositiveInteger('maxSuggestionChars', value.maxSuggestionChars)
   if (value.timeoutMs > MAX_TIMER_DELAY_MS) {
@@ -191,10 +191,11 @@ function keepTail(pairs: readonly TranscriptPair[], budget: number): number {
 
 /**
  * Build the model-visible transcript from the session log: user/assistant
- * messages of the last `maxRecentTurns` completed turns, redacted, tail-trimmed
- * to `maxTranscriptChars`.
+ * messages of the last `maxRecentTurns` completed turns (default 1 — only the
+ * last completed turn's user input and assistant final answer), redacted,
+ * tail-trimmed to `maxTranscriptChars`.
  * @param session - session whose log is the transcript source.
- * @param maxRecentTurns - completed-turn tail to include.
+ * @param maxRecentTurns - completed-turn tail to include (1 keeps only the last turn).
  * @param maxTranscriptChars - character budget for the kept tail.
  * @returns the bounded transcript, or `undefined` when no completed turn has messages.
  */
@@ -296,7 +297,7 @@ export async function generateSuggestion(
   signal: AbortSignal,
 ): Promise<SuggestPromptSuggested | undefined> {
   signal.throwIfAborted()
-  const transcript = buildTranscript(session, config.maxRecentTurns, config.maxTranscriptChars)
+  const transcript = buildTranscript(session, config.maxRecentTurns ?? 1, config.maxTranscriptChars)
   if (transcript === undefined) {
     throw new Error('suggest-prompt: session has no model-visible transcript to suggest from')
   }

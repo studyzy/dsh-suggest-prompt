@@ -1,7 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import LlmRuntime, { createAssistantMessage, createUserMessage, LlmAdapter } from '@deepseek-ai/dsh-llm'
-import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, Message, StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
@@ -298,6 +298,31 @@ describe('suggest-prompt plugin generation', () => {
     await settle()
     expect(suggestedEvents(session)[0]?.acceptKey).toBe('Alt+Slash')
     expect(ctx.sessionProjections.snapshot(session).values.suggestPrompt).toMatchObject({ acceptKey: 'Alt+Slash' })
+  })
+
+  it('defaults maxRecentTurns to 1, sending only the last completed turn', async () => {
+    const ctx = await bench({
+      maxInputBytes: 1000,
+      maxOutputTokens: 32,
+      timeoutMs: 1000,
+      maxTranscriptChars: 500,
+      maxSuggestionChars: 40,
+    })
+    const adapter = new ImmediateAdapter('继续修复登录页')
+    ctx.llm.registerAdapter(['main'], adapter)
+    const session = ctx.sessions.create(SessionId('default-last-turn'))
+    appendTurn(session, 1, '旧问题', '旧回答')
+    appendTurn(session, 2, '新问题', '新回答')
+
+    await settle()
+    expect(adapter.requests).toHaveLength(1)
+    const requestData = session.events.find(event => event.type === 'suggest-prompt/request')!.data as { messages: readonly Message[] }
+    const framed = requestData.messages[0]?.content
+      .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
+      .map(block => block.text)
+      .join(' ')
+    expect(framed).toContain('新问题')
+    expect(framed).not.toContain('旧问题')
   })
 
   it('prefers the configured provider/model pair over the logged route', async () => {
@@ -624,6 +649,35 @@ describe('generateSuggestion direct boundary', () => {
       new AbortController().signal,
     )
     expect(result?.acceptKey).toBe('Tab')
+  })
+
+  it('defaults the transcript window to the last turn when maxRecentTurns is omitted', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    contexts.push(ctx)
+    const adapter = new ImmediateAdapter('run the tests')
+    ctx.llm.registerAdapter(['main'], adapter)
+    const session = Session.create(SessionId('direct-default-turns'))
+    appendTurn(session, 1, '旧问题', '旧回答')
+    appendTurn(session, 2, '新问题', '新回答')
+    const result = await generateSuggestion(
+      ctx,
+      resolveSuggestPromptConfig({
+        maxInputBytes: 1000, maxOutputTokens: 32, timeoutMs: 1000,
+        maxTranscriptChars: 500, maxSuggestionChars: 40,
+      }),
+      session,
+      2,
+      new AbortController().signal,
+    )
+    expect(result).toBeDefined()
+    const requestData = session.events.find(event => event.type === 'suggest-prompt/request')!.data as { messages: readonly Message[] }
+    const framed = requestData.messages[0]?.content
+      .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
+      .map(block => block.text)
+      .join(' ')
+    expect(framed).toContain('新问题')
+    expect(framed).not.toContain('旧问题')
   })
 })
 

@@ -13,7 +13,7 @@ Generation is host-driven on `turn/end` with reason `completed`, deduplicated pe
 | `maxInputBytes` | Maximum UTF-8 bytes in the final framed user prompt |
 | `maxOutputTokens` | Auxiliary generation output-token cap |
 | `timeoutMs` | End-to-end auxiliary request deadline in milliseconds |
-| `maxRecentTurns` | Transcript tail keeps at most this many recent completed turns |
+| `maxRecentTurns` | Transcript tail keeps at most this many recent completed turns (default 1: only the last completed turn's user input and assistant final answer) |
 | `maxTranscriptChars` | Transcript tail character budget before framing |
 | `maxSuggestionChars` | Visible-character cap for the generated suggestion |
 | `provider` / `model` | Optional explicit route pair; omit both to inherit the session's latest logged request header |
@@ -33,7 +33,7 @@ Omit both `provider` and `model` to inherit the exact route from the current log
 
 #### What the model sees
 
-The suggestion model receives an instruction that binds it to predicting the user's next prompt in the user's own voice, forbids generating content or meta-text, and gives concrete examples and anti-examples of good suggestions; the instruction also constrains the reply language to match the conversation (`简体中文` when the last user message contains CJK text, otherwise `English`). The conversation tail is framed as labelled `[User Message]` / `[Assistant Response]` blocks (redacted, bounded by `maxRecentTurns` and `maxTranscriptChars`); the exact framed input and system prompt are recorded in the `suggest-prompt/request` event before dispatch.
+The suggestion model receives an instruction that binds it to predicting the user's next prompt in the user's own voice, forbids generating content or meta-text, and gives concrete examples and anti-examples of good suggestions; the instruction also constrains the reply language to match the conversation (`简体中文` when the last user message contains CJK text, otherwise `English`). The conversation tail is framed as labelled `[User Message]` / `[Assistant Response]` blocks — by default only the last completed turn (user input + assistant final answer), or the last `maxRecentTurns` turns when raised above the default of 1, redacted and bounded by `maxTranscriptChars`; the exact framed input and system prompt are recorded in the `suggest-prompt/request` event before dispatch.
 
 #### Token effect
 
