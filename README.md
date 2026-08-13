@@ -11,7 +11,7 @@ Two packages live here:
 
 ## Features
 
-- **Lightweight by default**: the suggestion model defaults to `deepseek-official` / `deepseek-v4-flash-ioa`; override the `provider`/`model` pair in the plugin config to route elsewhere.
+- **Lightweight by default**: the suggestion model defaults to `deepseek-official` / `deepseek-v4-flash`; override the `provider`/`model` pair in the plugin config to route elsewhere.
 - **Bounded**: byte/token/time bounds, transcript tail bounds, and a visible-character cap on the suggestion.
 - **Safe**: transcripts are secret-redacted before framing; output is sanitized (control sequences, fences, quotes stripped, single line).
 - **Re-arm without a call**: deleting back to an empty draft re-shows the persisted suggestion — no new model request.
@@ -32,7 +32,7 @@ Both packages are published to npm under `@deepseek-ai`. Install into a dsh depl
         maxTranscriptChars: 12000
         maxSuggestionChars: 240
         provider: deepseek-official
-        model: deepseek-v4-flash-ioa
+        model: deepseek-v4-flash
 
     - id: ui-suggest-prompt
       name: '@deepseek-ai/dsh-client-ui-suggest-prompt'
