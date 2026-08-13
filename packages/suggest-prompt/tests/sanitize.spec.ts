@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { redactSecrets, sanitizeSuggestion } from '../src/sanitize.ts'
+import { hasCJK, redactSecrets, sanitizeSuggestion, shouldFilterSuggestion } from '../src/sanitize.ts'
 
 describe('redactSecrets', () => {
   it('masks AWS, OpenAI, GitHub, Slack, JWT, and Stripe secret shapes', () => {
@@ -60,5 +60,78 @@ describe('sanitizeSuggestion', () => {
 
   it('returns an empty text when the output was entirely control', () => {
     expect(sanitizeSuggestion('\u001b[31m\u001b[0m', 10)).toEqual({ text: '', truncated: false })
+  })
+})
+
+describe('hasCJK', () => {
+  it('detects CJK ideographs and ignores other scripts', () => {
+    expect(hasCJK('继续')).toBe(true)
+    expect(hasCJK('mixed 中文 text')).toBe(true)
+    expect(hasCJK('plain english')).toBe(false)
+    expect(hasCJK('')).toBe(false)
+  })
+})
+
+describe('shouldFilterSuggestion', () => {
+  it('rejects empty output', () => {
+    expect(shouldFilterSuggestion('')).toBe(true)
+    expect(shouldFilterSuggestion('   ')).toBe(true)
+  })
+
+  it('rejects meta-text the model spells out instead of a suggestion', () => {
+    for (const meta of [
+      'done',
+      'nothing found',
+      'nothing to suggest right now',
+      'no suggestion available',
+      'no follow-up needed',
+      'please stay silent',
+      'no more tasks',
+    ]) {
+      expect(shouldFilterSuggestion(meta)).toBe(true)
+    }
+  })
+
+  it('rejects meta wrapped in punctuation', () => {
+    expect(shouldFilterSuggestion('(please hold)')).toBe(true)
+    expect(shouldFilterSuggestion('[anything]')).toBe(true)
+  })
+
+  it('rejects error echo the model might pass through', () => {
+    expect(shouldFilterSuggestion('api error: timeout')).toBe(true)
+    expect(shouldFilterSuggestion('error: something broke')).toBe(true)
+  })
+
+  it('rejects over-long output and stray single words, keeping known commands', () => {
+    expect(shouldFilterSuggestion('one two three four five six seven eight nine ten eleven twelve thirteen')).toBe(true)
+    expect(shouldFilterSuggestion('refactor')).toBe(true)
+    expect(shouldFilterSuggestion('ok')).toBe(false)
+    expect(shouldFilterSuggestion('/skills')).toBe(false)
+  })
+
+  it('rejects a lone unknown CJK character but keeps known CJK commands', () => {
+    expect(shouldFilterSuggestion('哈')).toBe(true)
+    expect(shouldFilterSuggestion('好')).toBe(false)
+    expect(shouldFilterSuggestion('继续')).toBe(false)
+  })
+
+  it('rejects long CJK suggestions by byte length', () => {
+    expect(shouldFilterSuggestion('长'.repeat(40))).toBe(true)
+    expect(shouldFilterSuggestion('继续修复登录页')).toBe(false)
+  })
+
+  it('rejects multi-sentence, formatted, evaluative, and assistant-voice output', () => {
+    expect(shouldFilterSuggestion('Run the tests. Then commit')).toBe(true)
+    expect(shouldFilterSuggestion('run *all* the tests')).toBe(true)
+    expect(shouldFilterSuggestion('thanks for the help')).toBe(true)
+    expect(shouldFilterSuggestion('不错，继续')).toBe(true)
+    expect(shouldFilterSuggestion('grateful for your help')).toBe(false)
+    expect(shouldFilterSuggestion("I'll take a look at it")).toBe(true)
+    expect(shouldFilterSuggestion('我来检查一下')).toBe(true)
+  })
+
+  it('keeps a plausible single-sentence next prompt', () => {
+    expect(shouldFilterSuggestion('run the tests')).toBe(false)
+    expect(shouldFilterSuggestion('继续修复那个 bug 并补充单元测试')).toBe(false)
   })
 })

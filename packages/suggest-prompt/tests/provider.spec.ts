@@ -12,6 +12,7 @@ import {
   buildTranscript,
   generateSuggestion,
   resolveSuggestPromptConfig,
+  suggestionLanguage,
   systemPrompt,
 } from '../src/generate.ts'
 import type { SuggestPromptProjection } from '../src/types.ts'
@@ -138,12 +139,33 @@ describe('resolveSuggestPromptConfig', () => {
     expect(() => resolveSuggestPromptConfig({ ...CONFIG, provider: 'p' })).toThrow(/provider and model/)
     expect(() => resolveSuggestPromptConfig({ ...CONFIG, model: 'm' })).toThrow(/provider and model/)
     expect(() => resolveSuggestPromptConfig({ ...CONFIG, provider: '', model: 'm' })).toThrow(/non-empty strings/)
+    expect(() => resolveSuggestPromptConfig({ ...CONFIG, acceptKey: '' })).toThrow(/acceptKey/)
+    expect(() => resolveSuggestPromptConfig({ ...CONFIG, acceptKey: 3 as never })).toThrow(/acceptKey/)
+    expect(resolveSuggestPromptConfig(CONFIG).acceptKey).toBeUndefined()
+    expect(resolveSuggestPromptConfig({ ...CONFIG, acceptKey: 'Alt+Slash' }).acceptKey).toBe('Alt+Slash')
   })
 })
 
 describe('systemPrompt', () => {
-  it('bakes the character cap into the instruction', () => {
-    expect(systemPrompt(40)).toContain('At most 40 visible characters')
+  it('bakes the character cap and the reply language into the instruction', () => {
+    const prompt = systemPrompt(40, '简体中文')
+    expect(prompt).toContain('At most 40 visible characters')
+    expect(prompt).toContain('Language: 简体中文')
+    expect(systemPrompt(40, 'English')).toContain('Language: English')
+  })
+})
+
+describe('suggestionLanguage', () => {
+  it('follows the last user message language, defaulting to English', () => {
+    expect(suggestionLanguage([
+      { role: 'user', text: '帮我写个函数' },
+      { role: 'assistant', text: '好的' },
+    ])).toBe('简体中文')
+    expect(suggestionLanguage([
+      { role: 'user', text: 'fix the bug' },
+      { role: 'assistant', text: 'done' },
+    ])).toBe('English')
+    expect(suggestionLanguage([{ role: 'assistant', text: 'hello' }])).toBe('English')
   })
 })
 
@@ -208,7 +230,7 @@ describe('buildTranscript', () => {
 
 describe('applySuggestPromptProjection', () => {
   it('returns the same reference for unrelated events', () => {
-    const state: SuggestPromptProjection = { turn: 1, baseSeq: 2, text: 'x', truncated: false, requestSeq: 3 }
+    const state: SuggestPromptProjection = { turn: 1, baseSeq: 2, text: 'x', truncated: false, requestSeq: 3, acceptKey: 'Tab' }
     const event = { type: 'turn/start', data: { turn: 1 } } as never
     expect(applySuggestPromptProjection(state, event)).toBe(state)
   })
@@ -218,22 +240,22 @@ describe('applySuggestPromptProjection', () => {
       type: 'suggest-prompt/suggested',
       data: {
         version: 1, turn: 2, baseSeq: 5, text: '继续', truncated: true,
-        route: { provider: 'main', model: 'main-model' }, requestSeq: 6,
+        route: { provider: 'main', model: 'main-model' }, requestSeq: 6, acceptKey: 'Tab',
       },
     } as never
     expect(applySuggestPromptProjection(null, event)).toEqual({
       turn: 2, baseSeq: 5, text: '继续', truncated: true,
-      route: { provider: 'main', model: 'main-model' }, requestSeq: 6,
+      route: { provider: 'main', model: 'main-model' }, requestSeq: 6, acceptKey: 'Tab',
     })
   })
 
   it('maps a suggested whole value without a route', () => {
     const event = {
       type: 'suggest-prompt/suggested',
-      data: { version: 1, turn: 2, baseSeq: 5, text: '继续', truncated: false, requestSeq: 6 },
+      data: { version: 1, turn: 2, baseSeq: 5, text: '继续', truncated: false, requestSeq: 6, acceptKey: 'Tab' },
     } as never
     expect(applySuggestPromptProjection(null, event)).toEqual({
-      turn: 2, baseSeq: 5, text: '继续', truncated: false, requestSeq: 6,
+      turn: 2, baseSeq: 5, text: '继续', truncated: false, requestSeq: 6, acceptKey: 'Tab',
     })
   })
 })
@@ -250,17 +272,32 @@ describe('suggest-prompt plugin generation', () => {
 
     expect(adapter.requests).toHaveLength(1)
     expect(adapter.requests[0]).toMatchObject({ provider: 'main', model: 'main-model', purpose: 'suggest-prompt', maxTokens: 32 })
-    expect(adapter.requests[0]?.system).toBe(systemPrompt(40))
+    expect(adapter.requests[0]?.system).toBe(systemPrompt(40, '简体中文'))
 
     const requestData = session.events.find(event => event.type === 'suggest-prompt/request')!.data as { sourceMessageSeqs: number[] }
     expect(requestData.sourceMessageSeqs.length).toBe(2)
 
     const suggested = suggestedEvents(session)
     expect(suggested).toHaveLength(1)
-    expect(suggested[0]).toMatchObject({ turn: 1, text: '继续修复登录页', truncated: false, route: { provider: 'main', model: 'main-model' } })
+    expect(suggested[0]).toMatchObject({
+      turn: 1, text: '继续修复登录页', truncated: false,
+      route: { provider: 'main', model: 'main-model' }, acceptKey: 'Tab',
+    })
 
     const projection = ctx.sessionProjections.snapshot(session).values.suggestPrompt
-    expect(projection).toMatchObject({ turn: 1, text: '继续修复登录页' })
+    expect(projection).toMatchObject({ turn: 1, text: '继续修复登录页', acceptKey: 'Tab' })
+  })
+
+  it('carries the configured accept key on the suggestion event and projection', async () => {
+    const ctx = await bench({ ...CONFIG, acceptKey: 'Alt+Slash' })
+    const adapter = new ImmediateAdapter('继续修复登录页')
+    ctx.llm.registerAdapter(['main'], adapter)
+    const session = ctx.sessions.create(SessionId('accept-key'))
+    appendTurn(session, 1, '问题', '回答')
+
+    await settle()
+    expect(suggestedEvents(session)[0]?.acceptKey).toBe('Alt+Slash')
+    expect(ctx.sessionProjections.snapshot(session).values.suggestPrompt).toMatchObject({ acceptKey: 'Alt+Slash' })
   })
 
   it('prefers the configured provider/model pair over the logged route', async () => {
@@ -272,6 +309,17 @@ describe('suggest-prompt plugin generation', () => {
 
     await settle()
     expect(adapter.requests[0]).toMatchObject({ provider: 'explicit', model: 'explicit-model' })
+  })
+
+  it('constrains the suggestion language to match the last user prompt', async () => {
+    const ctx = await bench()
+    const adapter = new ImmediateAdapter('run the tests')
+    ctx.llm.registerAdapter(['main'], adapter)
+    const session = ctx.sessions.create(SessionId('language-route'))
+    appendTurn(session, 1, 'fix the bug', 'done')
+
+    await settle()
+    expect(adapter.requests[0]?.system).toContain('Language: English')
   })
 
   it('skips turns that do not complete', async () => {
@@ -299,7 +347,7 @@ describe('suggest-prompt plugin generation', () => {
     session.append('assistant/message', { turn: 1, step: 1, message: assistantMessage('回答') }, { surfaceOp: 'append' })
     session.append('request/header', { header: { config: { provider: 'main', model: 'main-model' } }, reason: 'initial' })
     session.append('suggest-prompt/suggested', {
-      version: 1, turn: 1, baseSeq: 4, text: '已有建议', truncated: false, requestSeq: 5,
+      version: 1, turn: 1, baseSeq: 4, text: '已有建议', truncated: false, requestSeq: 5, acceptKey: 'Tab',
     })
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 
@@ -408,9 +456,33 @@ describe('suggest-prompt plugin generation', () => {
     expect(suggestedEvents(session)[0]?.text).toBe('建议文本')
   })
 
-  it('truncates over-cap output and reports it', async () => {
+  it('silently drops a semantically rejectable suggestion', async () => {
+    const ctx = await bench()
+    const warn = vi.spyOn(ctx.logger, 'warn')
+    const adapter = new ImmediateAdapter('no suggestion available')
+    ctx.llm.registerAdapter(['main'], adapter)
+    const session = ctx.sessions.create(SessionId('filtered'))
+    appendTurn(session, 1, '问题', '回答')
+
+    await settle()
+    expect(suggestedEvents(session)).toHaveLength(0)
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('drops verbose output instead of truncating it into a cut-off suggestion', async () => {
     const ctx = await bench()
     const adapter = new ImmediateAdapter('很长很长的建议文本'.repeat(10))
+    ctx.llm.registerAdapter(['main'], adapter)
+    const session = ctx.sessions.create(SessionId('verbose'))
+    appendTurn(session, 1, '问题', '回答')
+
+    await settle()
+    expect(suggestedEvents(session)).toHaveLength(0)
+  })
+
+  it('truncates over-cap output that still passes the semantic filter', async () => {
+    const ctx = await bench()
+    const adapter = new ImmediateAdapter(`${'a'.repeat(20)} ${'b'.repeat(20)}`)
     ctx.llm.registerAdapter(['main'], adapter)
     const session = ctx.sessions.create(SessionId('truncated'))
     appendTurn(session, 1, '问题', '回答')
@@ -418,7 +490,7 @@ describe('suggest-prompt plugin generation', () => {
     await settle()
     const suggested = suggestedEvents(session)[0]!
     expect(suggested.truncated).toBe(true)
-    expect(Array.from(suggested.text).length).toBeLessThanOrEqual(40)
+    expect(Array.from(suggested.text).length).toBe(40)
   })
 })
 
@@ -517,7 +589,7 @@ describe('generateSuggestion direct boundary', () => {
     }
   })
 
-  it('throws when sanitization leaves no text', async () => {
+  it('silently skips when sanitization leaves no text', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     contexts.push(ctx)
@@ -525,37 +597,50 @@ describe('generateSuggestion direct boundary', () => {
     ctx.llm.registerAdapter(['main'], adapter)
     const session = Session.create(SessionId('empty-output'))
     appendTurn(session, 1, '问题', '回答')
-    await expect(generateSuggestion(
+    const result = await generateSuggestion(
       ctx,
       resolveSuggestPromptConfig(CONFIG),
       session,
       1,
       new AbortController().signal,
-    )).rejects.toThrow(/produced no text/)
+    )
+    expect(result).toBeUndefined()
+    expect(session.events.some(event => event.type === 'suggest-prompt/suggested')).toBe(false)
+  })
+
+  it('defaults the accept key to Tab when the config omits it', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    contexts.push(ctx)
+    const adapter = new ImmediateAdapter('run the tests')
+    ctx.llm.registerAdapter(['main'], adapter)
+    const session = Session.create(SessionId('default-accept-key'))
+    appendTurn(session, 1, '问题', '回答')
+    const result = await generateSuggestion(
+      ctx,
+      resolveSuggestPromptConfig(CONFIG),
+      session,
+      1,
+      new AbortController().signal,
+    )
+    expect(result?.acceptKey).toBe('Tab')
   })
 })
 
 describe('suggest-prompt durable invariant', () => {
-  // The standalone repo has no vitest-wide invariant host; mount the companion
-  // explicitly (the monorepo mounts it globally via scripts/test-invariants.ts).
-  async function benchInvariant(): Promise<Context> {
-    const ctx = new Context()
-    await ctx.plugin(InvariantRegistry, { enabled: true })
-    await ctx.plugin(SessionStore)
-    await ctx.plugin({ inject: ['invariants'], apply: installCompanion })
-    contexts.push(ctx)
-    return ctx
-  }
-
   it('rejects an unsupported event version', async () => {
-    const ctx = await benchInvariant()
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    contexts.push(ctx)
     const session = ctx.sessions.create(SessionId('inv-version'))
     expect(() => session.append('suggest-prompt/request', { version: 2 } as never))
       .toThrow(/unsupported version/)
   })
 
   it('rejects a request with an invalid payload', async () => {
-    const ctx = await benchInvariant()
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    contexts.push(ctx)
     const session = ctx.sessions.create(SessionId('inv-request'))
     expect(() => session.append('suggest-prompt/request', {
       version: 1, turn: 'bad', sourceMessageSeqs: [], route: null,
@@ -564,7 +649,9 @@ describe('suggest-prompt durable invariant', () => {
   })
 
   it('rejects a request whose route is not an object', async () => {
-    const ctx = await benchInvariant()
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    contexts.push(ctx)
     const session = ctx.sessions.create(SessionId('inv-route'))
     expect(() => session.append('suggest-prompt/request', {
       version: 1, turn: 1, sourceMessageSeqs: [], route: 'bad',
@@ -573,7 +660,9 @@ describe('suggest-prompt durable invariant', () => {
   })
 
   it('rejects a suggested event with an invalid payload', async () => {
-    const ctx = await benchInvariant()
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    contexts.push(ctx)
     const session = ctx.sessions.create(SessionId('inv-suggested'))
     expect(() => session.append('suggest-prompt/suggested', {
       version: 1, turn: 1, baseSeq: 'x', text: '', truncated: 'y', requestSeq: 1,

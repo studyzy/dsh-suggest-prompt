@@ -2,8 +2,9 @@
 /**
  * GhostSuggestion bridge behavior: the computed ghost text (projection turn
  * matches the latest completed turn, session idle, empty draft) is pushed
- * through inputActions.setGhost, and Alt-/ with composer focus fills the draft
- * through setDraft. The component renders nothing.
+ * through inputActions.setGhost, and the configured accept shortcut (default
+ * Tab, like Claude Code) fills the draft through setDraft while the composer
+ * textarea holds focus. The component renders nothing.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
@@ -22,6 +23,7 @@ const SUGGESTION: NonNullable<SuggestPromptProjection> = {
   text: '继续修复登录页',
   truncated: false,
   requestSeq: 42,
+  acceptKey: 'Tab',
 }
 
 function kit(over: {
@@ -44,6 +46,21 @@ function kit(over: {
     inputActions: { setGhost, setDraft },
   } as unknown as GhostSuggestionProps
   return { setGhost, setDraft, props }
+}
+
+/** Focus a throwaway textarea and return it (removed by the caller's cleanup). */
+function focusedTextarea(): HTMLTextAreaElement {
+  const textarea = document.createElement('textarea')
+  document.body.appendChild(textarea)
+  textarea.focus()
+  return textarea
+}
+
+/** Dispatch a keydown on the window and return the (cancelable) event. */
+function press(init: KeyboardEventInit): KeyboardEvent {
+  const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })
+  window.dispatchEvent(event)
+  return event
 }
 
 describe('GhostSuggestion bridge', () => {
@@ -95,37 +112,91 @@ describe('GhostSuggestion bridge', () => {
     expect(container.firstChild).toBeNull()
   })
 
-  it('Alt-/ fills the draft with the ghost while the composer textarea holds focus', () => {
+  it('Tab fills the draft with the ghost while the composer textarea holds focus', () => {
     const { setDraft, props } = kit({ projection: SUGGESTION })
     render(<GhostSuggestion {...props} />)
-    const textarea = document.createElement('textarea')
-    document.body.appendChild(textarea)
-    textarea.focus()
-    expect(document.activeElement).toBe(textarea)
+    const textarea = focusedTextarea()
+    let event: KeyboardEvent | undefined
     act(() => {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: '/', code: 'Slash', altKey: true, bubbles: true }))
+      event = press({ key: 'Tab', code: 'Tab' })
+    })
+    expect(event?.defaultPrevented).toBe(true)
+    expect(setDraft).toHaveBeenCalledWith('继续修复登录页')
+    textarea.remove()
+  })
+
+  it('Tab is ignored when the composer textarea does not hold focus', () => {
+    const { setDraft, props } = kit({ projection: SUGGESTION })
+    render(<GhostSuggestion {...props} />)
+    const event = press({ key: 'Tab', code: 'Tab' })
+    expect(event.defaultPrevented).toBe(false)
+    expect(setDraft).not.toHaveBeenCalled()
+  })
+
+  it('Tab with a modifier is not the accept shortcut', () => {
+    const { setDraft, props } = kit({ projection: SUGGESTION })
+    render(<GhostSuggestion {...props} />)
+    const textarea = focusedTextarea()
+    act(() => {
+      press({ key: 'Tab', code: 'Tab', shiftKey: true })
+    })
+    expect(setDraft).not.toHaveBeenCalled()
+    textarea.remove()
+  })
+
+  it('an IME composition keydown never accepts the ghost', () => {
+    const { setDraft, props } = kit({ projection: SUGGESTION })
+    render(<GhostSuggestion {...props} />)
+    const textarea = focusedTextarea()
+    act(() => {
+      press({ key: 'Tab', code: 'Tab', isComposing: true })
+    })
+    expect(setDraft).not.toHaveBeenCalled()
+    textarea.remove()
+  })
+
+  it('Tab is ignored when there is no ghost to accept', () => {
+    const { setDraft, props } = kit({ projection: null })
+    render(<GhostSuggestion {...props} />)
+    const textarea = focusedTextarea()
+    const event = press({ key: 'Tab', code: 'Tab' })
+    expect(event.defaultPrevented).toBe(false)
+    expect(setDraft).not.toHaveBeenCalled()
+    textarea.remove()
+  })
+
+  it('a configured custom shortcut fills the draft instead of Tab', () => {
+    const { setDraft, props } = kit({ projection: { ...SUGGESTION, acceptKey: 'Alt+Slash' } })
+    render(<GhostSuggestion {...props} />)
+    const textarea = focusedTextarea()
+    act(() => {
+      press({ key: '/', code: 'Slash', altKey: true })
+    })
+    expect(setDraft).toHaveBeenCalledWith('继续修复登录页')
+    act(() => {
+      press({ key: 'Tab', code: 'Tab' })
+    })
+    expect(setDraft).toHaveBeenCalledTimes(1)
+    textarea.remove()
+  })
+
+  it('a malformed configured shortcut falls back to the default Tab', () => {
+    const { setDraft, props } = kit({ projection: { ...SUGGESTION, acceptKey: 'Bogus+Key' } })
+    render(<GhostSuggestion {...props} />)
+    const textarea = focusedTextarea()
+    act(() => {
+      press({ key: 'Tab', code: 'Tab' })
     })
     expect(setDraft).toHaveBeenCalledWith('继续修复登录页')
     textarea.remove()
   })
 
-  it('Alt-/ is ignored when the composer textarea does not hold focus', () => {
+  it('unconfigured keys never fill the draft', () => {
     const { setDraft, props } = kit({ projection: SUGGESTION })
     render(<GhostSuggestion {...props} />)
+    const textarea = focusedTextarea()
     act(() => {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: '/', code: 'Slash', altKey: true, bubbles: true }))
-    })
-    expect(setDraft).not.toHaveBeenCalled()
-  })
-
-  it('other keys never fill the draft', () => {
-    const { setDraft, props } = kit({ projection: SUGGESTION })
-    render(<GhostSuggestion {...props} />)
-    const textarea = document.createElement('textarea')
-    document.body.appendChild(textarea)
-    textarea.focus()
-    act(() => {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }))
+      press({ key: 'Enter', code: 'Enter' })
     })
     expect(setDraft).not.toHaveBeenCalled()
     textarea.remove()

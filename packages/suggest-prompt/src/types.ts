@@ -39,6 +39,12 @@ export interface SuggestPromptSuggestion {
   readonly route?: { readonly provider: string; readonly model: string }
   /** Seq of the matching `suggest-prompt/request` event. */
   readonly requestSeq: number
+  /**
+   * Composer shortcut that accepts this suggestion into the draft (for
+   * example `Tab` or `Alt+Slash`), as configured on the host plugin. The
+   * client ghost text intercepts that key while a suggestion is displayed.
+   */
+  readonly acceptKey: string
 }
 
 /**

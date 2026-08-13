@@ -40,6 +40,7 @@ const suggestPromptProjectionSchema: ZodType<SuggestPromptSuggestion | null> = z
       model: zod.string().min(1),
     }).optional(),
     requestSeq: zod.number().int().nonnegative(),
+    acceptKey: zod.string().min(1),
   }),
   zod.null(),
 ]) as ZodType<SuggestPromptSuggestion | null>
@@ -68,6 +69,7 @@ export function applySuggestPromptProjection(
     truncated: data.truncated,
     ...(data.route !== undefined ? { route: data.route } : {}),
     requestSeq: data.requestSeq,
+    acceptKey: data.acceptKey,
   }
 }
 
@@ -103,6 +105,11 @@ export interface Config {
   readonly provider?: string
   /** Optional explicit model id; must be paired with `provider`. */
   readonly model?: string
+  /**
+   * Composer shortcut that accepts a displayed suggestion into the draft
+   * (for example `Tab`, `Alt+Slash`, or `Ctrl+Enter`). Default `Tab`.
+   */
+  readonly acceptKey?: string
 }
 
 /** Loader schema: every bound is required and provider/model pair optionally overrides the logged route. */
@@ -115,6 +122,7 @@ export const Config: z<Config> = z.object({
   maxSuggestionChars: z.number().step(1).min(1).required(),
   provider: z.string(),
   model: z.string(),
+  acceptKey: z.string().default('Tab'),
 })
 
 /** Cordis plugin identity. */

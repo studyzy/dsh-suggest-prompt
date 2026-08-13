@@ -19,7 +19,7 @@ describe('suggest-prompt invariant companion', () => {
     const session = ctx.sessions.create(SessionId('seed-session'))
     session.append('turn/start', { turn: 1 })
     session.append('suggest-prompt/suggested', {
-      version: 1, turn: 1, baseSeq: 2, text: '建议', truncated: false, requestSeq: 1,
+      version: 1, turn: 1, baseSeq: 2, text: '建议', truncated: false, requestSeq: 1, acceptKey: 'Tab',
     })
     // Install after the session exists: the companion seeds from ctx.sessions.list().
     await ctx.plugin({ inject: ['invariants'], apply: installCompanion })

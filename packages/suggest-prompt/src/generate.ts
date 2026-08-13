@@ -18,7 +18,7 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import { deriveEventMessage } from '@deepseek-ai/dsh-session/surface'
 import { deadline, MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type { SuggestPromptRequested, SuggestPromptSuggested } from './domain.ts'
-import { redactSecrets, sanitizeSuggestion } from './sanitize.ts'
+import { cleanSuggestion, hasCJK, redactSecrets, sanitizeSuggestion, shouldFilterSuggestion } from './sanitize.ts'
 import type { Config } from './index.ts'
 
 /** Capability-owned timeout reason code for auxiliary suggestion requests. */
@@ -37,6 +37,7 @@ const CONFIG_KEYS: ReadonlySet<string> = new Set([
   'maxSuggestionChars',
   'provider',
   'model',
+  'acceptKey',
 ])
 
 /** Validate one positive integer limit. */
@@ -79,18 +80,78 @@ export function resolveSuggestPromptConfig(config: Config): ResolvedSuggestPromp
       || typeof value.model !== 'string' || value.model.length === 0)) {
     throw new Error('suggest-prompt: provider and model overrides must be non-empty strings')
   }
+  if (value.acceptKey !== undefined
+    && (typeof value.acceptKey !== 'string' || value.acceptKey.trim().length === 0)) {
+    throw new Error('suggest-prompt: acceptKey must be a non-empty shortcut string')
+  }
   return deepFreeze(Object.assign({}, value))
 }
 
-/** Stable instruction for the suggestion extraction call. */
-export function systemPrompt(maxSuggestionChars: number): string {
+/**
+ * Stable instruction for the suggestion extraction call. The model is bound to
+ * predicting the user's next prompt in the user's own voice, forbidden from
+ * generating content or meta-text; `language` constrains the reply language to
+ * match the conversation.
+ * @param maxSuggestionChars - visible-character cap baked into the instruction.
+ * @param language - reply language ("简体中文" for CJK conversations, else "English").
+ */
+export function systemPrompt(maxSuggestionChars: number, language: string): string {
   return [
-    'You are the "suggested prompt" generator for a coding-assistant chat.',
-    'Given the most recent conversation transcript, write ONE short prompt the user would most likely type next to continue the work.',
-    'Output only the prompt text on a single line, in plain natural language, with no quotes, labels, Markdown, XML, or terminal control codes.',
-    'Use the language of the conversation.',
+    'You are a prompt suggestion generator. Your ONLY purpose is to predict the user\'s next prompt in a coding-assistant chat — never to generate content.',
+    '',
+    'Your job:',
+    '1. Read the user\'s most recent message and the assistant\'s final answer.',
+    '2. Predict what the USER would naturally type next — not what the assistant should do.',
+    '',
+    'CRITICAL CONSTRAINTS:',
+    '- You are NOT a code generator, writer, or task executor.',
+    '- You MUST respond with ONLY the suggestion text, on a single line.',
+    '- NEVER generate, implement, code, or produce any content.',
+    '- NEVER provide explanations, reasoning, or extra text.',
+    '- NEVER use quotes, labels, Markdown, XML, or formatting.',
+    '- Be specific when you can — name files, functions, or actions.',
+    '- If the next step is not obvious, reply with nothing at all.',
+    '',
+    'THE TEST: would the user think "I was just about to type that"?',
+    '',
+    'EXAMPLES:',
+    'User asked "fix the bug and run tests", bug is fixed -> "run the tests"',
+    'After code written -> "try it out"',
+    'Assistant offers options -> pick the one the user would choose',
+    'Assistant asks to continue -> "yes" or "go ahead"',
+    'Task complete, obvious follow-up -> "commit this" or "push it"',
+    'After an error or misunderstanding -> reply with nothing',
+    '',
+    'NEVER SUGGEST:',
+    '- Evaluative feedback ("looks good", "thanks")',
+    '- Questions ("what about...?")',
+    '- Assistant-voice phrasing ("Let me...", "I\'ll...", "Here\'s...")',
+    '- New ideas the user did not ask about',
+    '- Multiple sentences',
+    '',
+    'Reply with ONLY the suggestion, 3-12 words, no quotes or explanation. If the next step is not obvious, reply with nothing.',
+    '',
+    `Language: ${language}`,
     `At most ${maxSuggestionChars} visible characters.`,
   ].join('\n')
+}
+
+/** Pick the reply language to match the user's last prompt (CJK → 简体中文). */
+export function suggestionLanguage(pairs: readonly TranscriptPair[]): string {
+  for (const pair of [...pairs].reverse()) {
+    if (pair.role !== 'user') continue
+    return hasCJK(pair.text) ? '简体中文' : 'English'
+  }
+  return 'English'
+}
+
+/** Frame the kept pairs as labelled blocks so the model reads them as context. */
+function frameTranscript(pairs: readonly TranscriptPair[]): string {
+  const blocks: string[] = []
+  for (const pair of pairs) {
+    blocks.push(pair.role === 'user' ? `[User Message]\n${pair.text}` : `[Assistant Response]\n${pair.text}`)
+  }
+  return blocks.join('\n\n')
 }
 
 /** One redacted user/assistant exchange line ready for framing. */
@@ -222,7 +283,10 @@ function finishError(finish: FinishReason): Error | undefined {
  * @param session - owning session log.
  * @param turn - completed turn whose completion this suggestion answers.
  * @param signal - cancellation forwarded to the auxiliary call.
- * @returns the durable whole-value suggestion event payload.
+ * @returns the durable whole-value suggestion event payload, or `undefined`
+ * when the model produced no usable suggestion (an empty or semantically
+ * rejectable reply — the system prompt tells it to reply with nothing when the
+ * next step is not obvious). Genuine failures throw.
  */
 export async function generateSuggestion(
   ctx: Context,
@@ -230,14 +294,16 @@ export async function generateSuggestion(
   session: Session,
   turn: number,
   signal: AbortSignal,
-): Promise<SuggestPromptSuggested> {
+): Promise<SuggestPromptSuggested | undefined> {
   signal.throwIfAborted()
   const transcript = buildTranscript(session, config.maxRecentTurns, config.maxTranscriptChars)
   if (transcript === undefined) {
     throw new Error('suggest-prompt: session has no model-visible transcript to suggest from')
   }
   const route = routeOf(session, config)
-  const framed = `Write one suggested next prompt from this JSON conversation:\n${JSON.stringify(transcript.pairs)}`
+  const language = suggestionLanguage(transcript.pairs)
+  const system = systemPrompt(config.maxSuggestionChars, language)
+  const framed = frameTranscript(transcript.pairs)
   const inputBytes = Buffer.byteLength(framed, 'utf8')
   if (inputBytes > config.maxInputBytes) {
     throw new Error(`suggest-prompt: input is ${inputBytes} bytes, exceeding maxInputBytes ${config.maxInputBytes}`)
@@ -246,7 +312,6 @@ export async function generateSuggestion(
     content: [{ type: 'text', text: framed }],
     source: { kind: 'plugin', plugin: 'dsh-suggest-prompt' },
   })]
-  const system = systemPrompt(config.maxSuggestionChars)
   using callDeadline = deadline(signal, config.timeoutMs, SUGGEST_PROMPT_TIMEOUT_CODE)
   const options: GenerateOptions = deepFreeze({
     provider: route.provider,
@@ -285,8 +350,16 @@ export async function generateSuggestion(
     .filter((block): block is Extract<(typeof blocks)[number], { type: 'text' }> => block.type === 'text')
     .map(block => block.text)
     .join(' ')
-  const { text: suggestion, truncated } = sanitizeSuggestion(text, config.maxSuggestionChars)
-  if (suggestion.length === 0) throw new Error('suggest-prompt: suggestion model produced no text')
+  // Filter the cleaned-but-untruncated output so verbose replies are dropped,
+  // not silently truncated into a cut-off suggestion.
+  const cleaned = cleanSuggestion(text)
+  if (cleaned.length === 0 || shouldFilterSuggestion(cleaned)) {
+    // An empty or semantically rejectable reply is a normal "no suggestion"
+    // (the prompt tells the model to stay silent when the next step is not
+    // obvious), not a failure. The request event above still records the call.
+    return undefined
+  }
+  const { text: suggestion, truncated } = sanitizeSuggestion(cleaned, config.maxSuggestionChars)
   const suggested: SuggestPromptSuggested = {
     version: 1,
     turn,
@@ -295,6 +368,7 @@ export async function generateSuggestion(
     truncated,
     route,
     requestSeq: request.seq,
+    acceptKey: config.acceptKey ?? 'Tab',
   }
   session.append('suggest-prompt/suggested', suggested)
   return suggested
