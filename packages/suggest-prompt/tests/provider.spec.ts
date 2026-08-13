@@ -5,9 +5,9 @@ import type { GenerateOptions, Message, StreamChunk } from '@deepseek-ai/dsh-llm
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
-import * as suggestPromptPlugin from '@deepseek-ai/dsh-suggest-prompt'
-import type { Config } from '@deepseek-ai/dsh-suggest-prompt'
-import { applySuggestPromptProjection } from '@deepseek-ai/dsh-suggest-prompt'
+import * as suggestPromptPlugin from '@studyzy/dsh-suggest-prompt'
+import type { Config } from '@studyzy/dsh-suggest-prompt'
+import { applySuggestPromptProjection } from '@studyzy/dsh-suggest-prompt'
 import {
   buildTranscript,
   generateSuggestion,

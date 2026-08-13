@@ -4,7 +4,7 @@
  * model carries secret-shaped text, and nothing the model returns can inject
  * terminal control into the web composer or read as meta-text instead of a
  * real next prompt. Pure functions, exported for direct unit coverage.
- * @module @deepseek-ai/dsh-suggest-prompt/sanitize
+ * @module @studyzy/dsh-suggest-prompt/sanitize
  */
 
 /** One secret-shaped pattern and its replacement label. */

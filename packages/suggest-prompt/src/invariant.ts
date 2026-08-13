@@ -1,10 +1,10 @@
-/** Package-owned durable suggest-prompt invariants. @module @deepseek-ai/dsh-suggest-prompt/invariant */
+/** Package-owned durable suggest-prompt invariants. @module @studyzy/dsh-suggest-prompt/invariant */
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-suggest-prompt'
+const PACKAGE_NAME = '@studyzy/dsh-suggest-prompt'
 
 /** Cordis companion plugin name. */
 export const name = 'suggest-prompt-invariant'

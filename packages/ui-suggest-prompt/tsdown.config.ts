@@ -1,7 +1,7 @@
 import type { UserConfig } from 'tsdown'
 
 /** The plugin id stamped into the module-loader handoff and style tags. */
-const ID = '@deepseek-ai/dsh-client-ui-suggest-prompt'
+const ID = '@studyzy/dsh-client-ui-suggest-prompt'
 
 /**
  * Externals resolved from the harness's loader module table: the host Cordis

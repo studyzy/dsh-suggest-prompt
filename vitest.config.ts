@@ -11,13 +11,13 @@ const root = fileURLToPath(new URL('.', import.meta.url))
 export default defineConfig({
   resolve: {
     alias: {
-      '@deepseek-ai/dsh-suggest-prompt/client': fileURLToPath(new URL('packages/suggest-prompt/src/client.ts', import.meta.url)),
-      '@deepseek-ai/dsh-suggest-prompt/types': fileURLToPath(new URL('packages/suggest-prompt/src/types.ts', import.meta.url)),
-      '@deepseek-ai/dsh-suggest-prompt/invariant': fileURLToPath(new URL('packages/suggest-prompt/src/invariant.ts', import.meta.url)),
-      '@deepseek-ai/dsh-suggest-prompt': fileURLToPath(new URL('packages/suggest-prompt/src/index.ts', import.meta.url)),
-      '@deepseek-ai/dsh-client-ui-suggest-prompt/client': fileURLToPath(new URL('packages/ui-suggest-prompt/src/client/index.ts', import.meta.url)),
-      '@deepseek-ai/dsh-client-ui-suggest-prompt/invariant': fileURLToPath(new URL('packages/ui-suggest-prompt/src/invariant.ts', import.meta.url)),
-      '@deepseek-ai/dsh-client-ui-suggest-prompt': fileURLToPath(new URL('packages/ui-suggest-prompt/src/index.ts', import.meta.url)),
+      '@studyzy/dsh-suggest-prompt/client': fileURLToPath(new URL('packages/suggest-prompt/src/client.ts', import.meta.url)),
+      '@studyzy/dsh-suggest-prompt/types': fileURLToPath(new URL('packages/suggest-prompt/src/types.ts', import.meta.url)),
+      '@studyzy/dsh-suggest-prompt/invariant': fileURLToPath(new URL('packages/suggest-prompt/src/invariant.ts', import.meta.url)),
+      '@studyzy/dsh-suggest-prompt': fileURLToPath(new URL('packages/suggest-prompt/src/index.ts', import.meta.url)),
+      '@studyzy/dsh-client-ui-suggest-prompt/client': fileURLToPath(new URL('packages/ui-suggest-prompt/src/client/index.ts', import.meta.url)),
+      '@studyzy/dsh-client-ui-suggest-prompt/invariant': fileURLToPath(new URL('packages/ui-suggest-prompt/src/invariant.ts', import.meta.url)),
+      '@studyzy/dsh-client-ui-suggest-prompt': fileURLToPath(new URL('packages/ui-suggest-prompt/src/index.ts', import.meta.url)),
     },
   },
   test: {

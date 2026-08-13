@@ -1,8 +1,8 @@
-# @deepseek-ai/dsh-suggest-prompt
+# @studyzy/dsh-suggest-prompt
 
 English | [中文](README.zh.md)
 
-Host plugin that, after every completed agent turn, generates **one suggested next prompt** for the user through a bounded auxiliary `ctx.llm` call. The suggestion is appended to the session log as the `suggest-prompt/suggested` event, and the `suggestPrompt` session projection surfaces it to the web composer as ghost text (see `@deepseek-ai/dsh-client-ui-suggest-prompt`).
+Host plugin that, after every completed agent turn, generates **one suggested next prompt** for the user through a bounded auxiliary `ctx.llm` call. The suggestion is appended to the session log as the `suggest-prompt/suggested` event, and the `suggestPrompt` session projection surfaces it to the web composer as ghost text (see `@studyzy/dsh-client-ui-suggest-prompt`).
 
 Generation is host-driven on `turn/end` with reason `completed`, deduplicated per session and turn, and superseded (aborted) when the next completed turn arrives. The plugin carries all of its own deployment policy: routes, byte/token/time bounds, transcript bounds, and the suggestion length cap.
 

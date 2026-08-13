@@ -4,7 +4,7 @@
  * example `Tab` or `Alt+Slash`), and this module turns that spec into an exact
  * KeyboardEvent matcher. Pure and side-effect free, so the browser half can
  * unit-test it directly.
- * @module @deepseek-ai/dsh-client-ui-suggest-prompt/accept-key
+ * @module @studyzy/dsh-client-ui-suggest-prompt/accept-key
  */
 
 /** One keyboard-event predicate matching the configured accept shortcut. */

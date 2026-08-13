@@ -4,7 +4,7 @@
  * sanitization. Mirrors the session-title-llm call policy (byte bound, output
  * cap, deadline, pre-dispatch request event) so the model-visible⟺logged
  * invariant holds for every suggestion request.
- * @module @deepseek-ai/dsh-suggest-prompt/generate
+ * @module @studyzy/dsh-suggest-prompt/generate
  */
 
 import type { Context } from '@deepseek-ai/cordis'

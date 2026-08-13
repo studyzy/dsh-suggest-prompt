@@ -4,7 +4,7 @@ import LlmRuntime, { createAssistantMessage, createUserMessage } from '@deepseek
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
-import * as suggestPromptPlugin from '@deepseek-ai/dsh-suggest-prompt'
+import * as suggestPromptPlugin from '@studyzy/dsh-suggest-prompt'
 
 const contexts: Context[] = []
 

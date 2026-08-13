@@ -7,7 +7,7 @@
  * client aggregates — with zero content duplication. Host-coupled vocabulary
  * (event payloads, message sources) lives in ./domain.ts.
  *
- * @module @deepseek-ai/dsh-suggest-prompt/types
+ * @module @studyzy/dsh-suggest-prompt/types
  */
 
 /**
@@ -22,7 +22,7 @@
  * Host-coupled vocabulary (event payloads, message sources) lives in
  * ./domain.ts.
  *
- * @module @deepseek-ai/dsh-suggest-prompt/types
+ * @module @studyzy/dsh-suggest-prompt/types
  */
 
 /** The suggestion generated after one completed turn, whole-value per event. */

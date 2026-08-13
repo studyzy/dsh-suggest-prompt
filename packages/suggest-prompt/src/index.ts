@@ -6,7 +6,7 @@
  * is per-session deduplicated by turn and superseded on the next completed
  * turn. The projection unit activates only where a projection registry is
  * composed (headless assemblies stay unaffected).
- * @module @deepseek-ai/dsh-suggest-prompt
+ * @module @studyzy/dsh-suggest-prompt
  */
 
 import type { Context } from '@deepseek-ai/cordis'

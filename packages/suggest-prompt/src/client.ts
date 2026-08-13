@@ -4,7 +4,7 @@
  * namespace (repo discipline), so `./client` projects the same single-source
  * content `./types` serves to host consumers — zero duplication.
  *
- * @module @deepseek-ai/dsh-suggest-prompt/client
+ * @module @studyzy/dsh-suggest-prompt/client
  */
 
 export type * from './types.ts'

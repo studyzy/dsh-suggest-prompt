@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-ui-suggest-prompt
+# @studyzy/dsh-client-ui-suggest-prompt
 
 English | [中文](README.zh.md)
 

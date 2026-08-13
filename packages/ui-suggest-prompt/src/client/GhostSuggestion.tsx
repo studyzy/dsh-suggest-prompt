@@ -11,7 +11,7 @@ import { useEffect, useMemo } from 'react'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls the `suggestPrompt` SessionProjectionMap key merge through
 // the pure client outlet (the projection's ONE home).
-import type {} from '@deepseek-ai/dsh-suggest-prompt/client'
+import type {} from '@studyzy/dsh-suggest-prompt/client'
 import { parseAcceptKey } from './accept-key.ts'
 import type { AcceptKeyMatcher } from './accept-key.ts'
 

@@ -6,8 +6,8 @@
 
 | 包 | 作用 |
 |---|---|
-| [`@deepseek-ai/dsh-suggest-prompt`](packages/suggest-prompt) | 宿主插件：在 `turn/end`（reason=`completed`）时生成建议，发布 `suggestPrompt` 会话投影。 |
-| [`@deepseek-ai/dsh-client-ui-suggest-prompt`](packages/ui-suggest-prompt) | 浏览器插件：读取投影，把建议推入输入框的幽灵装饰（`InputActions.setGhost`），按配置的快捷键填入草稿。 |
+| [`@studyzy/dsh-suggest-prompt`](packages/suggest-prompt) | 宿主插件：在 `turn/end`（reason=`completed`）时生成建议，发布 `suggestPrompt` 会话投影。 |
+| [`@studyzy/dsh-client-ui-suggest-prompt`](packages/ui-suggest-prompt) | 浏览器插件：读取投影，把建议推入输入框的幽灵装饰（`InputActions.setGhost`），按配置的快捷键填入草稿。 |
 
 ## 特性
 
@@ -28,10 +28,10 @@
 
 ### 通过 npm 安装（发布后）
 
-> 注意：`@deepseek-ai/dsh-suggest-prompt` 与 `@deepseek-ai/dsh-client-ui-suggest-prompt` 的完整依赖链尚未全部发布到 npm（上游 `@deepseek-ai/dsh-compact`、`@deepseek-ai/dsh-environment` 等仍缺失）。等 registry 补齐后：
+> 注意：`@studyzy/dsh-suggest-prompt` 与 `@studyzy/dsh-client-ui-suggest-prompt` 的完整依赖链尚未全部发布到 npm（上游 `@deepseek-ai/dsh-compact`、`@deepseek-ai/dsh-environment` 等仍缺失）。等 registry 补齐后：
 
 ```sh
-npm install @deepseek-ai/dsh-suggest-prompt @deepseek-ai/dsh-client-ui-suggest-prompt
+npm install @studyzy/dsh-suggest-prompt @studyzy/dsh-client-ui-suggest-prompt
 ```
 
 然后在 profile 的 cordis.yml / 补丁层挂上两行（见下「配置」示例）。
@@ -42,7 +42,7 @@ npm install @deepseek-ai/dsh-suggest-prompt @deepseek-ai/dsh-client-ui-suggest-p
 
 ```yaml
 - id: suggest-prompt
-  name: '@deepseek-ai/dsh-suggest-prompt'
+  name: '@studyzy/dsh-suggest-prompt'
   config:
     maxInputBytes: 4096
     maxOutputTokens: 512
@@ -55,7 +55,7 @@ npm install @deepseek-ai/dsh-suggest-prompt @deepseek-ai/dsh-client-ui-suggest-p
     acceptKey: Tab
 
 - id: ui-suggest-prompt
-  name: '@deepseek-ai/dsh-client-ui-suggest-prompt'
+  name: '@studyzy/dsh-client-ui-suggest-prompt'
 ```
 
 `provider` / `model` 同时省略时，会继承当前主请求最近一次记录的路由，无需为建议单独配置模型。
@@ -128,8 +128,8 @@ This repository is the authoritative source of record for the two packages:
 
 | Package | Role |
 |---|---|
-| [`@deepseek-ai/dsh-suggest-prompt`](packages/suggest-prompt) | Host plugin: generates the suggestion on `turn/end` (reason `completed`) and publishes the `suggestPrompt` session projection. |
-| [`@deepseek-ai/dsh-client-ui-suggest-prompt`](packages/ui-suggest-prompt) | Browser plugin: reads the projection, pushes the suggestion into the composer's ghost decoration (`InputActions.setGhost`), and fills the draft on the configured shortcut. |
+| [`@studyzy/dsh-suggest-prompt`](packages/suggest-prompt) | Host plugin: generates the suggestion on `turn/end` (reason `completed`) and publishes the `suggestPrompt` session projection. |
+| [`@studyzy/dsh-client-ui-suggest-prompt`](packages/ui-suggest-prompt) | Browser plugin: reads the projection, pushes the suggestion into the composer's ghost decoration (`InputActions.setGhost`), and fills the draft on the configured shortcut. |
 
 ## Features
 
@@ -150,10 +150,10 @@ This repository is the authoritative source of record for the two packages:
 
 ### From npm (once published)
 
-> Note: the full dependency chain of `@deepseek-ai/dsh-suggest-prompt` and `@deepseek-ai/dsh-client-ui-suggest-prompt` is not fully on the npm registry yet (upstream `@deepseek-ai/dsh-compact`, `@deepseek-ai/dsh-environment`, etc. are still missing). Once the registry is complete:
+> Note: the full dependency chain of `@studyzy/dsh-suggest-prompt` and `@studyzy/dsh-client-ui-suggest-prompt` is not fully on the npm registry yet (upstream `@deepseek-ai/dsh-compact`, `@deepseek-ai/dsh-environment`, etc. are still missing). Once the registry is complete:
 
 ```sh
-npm install @deepseek-ai/dsh-suggest-prompt @deepseek-ai/dsh-client-ui-suggest-prompt
+npm install @studyzy/dsh-suggest-prompt @studyzy/dsh-client-ui-suggest-prompt
 ```
 
 Then mount the two rows in your profile's cordis.yml / patch layer (see the config example below).
@@ -164,7 +164,7 @@ Put the two packages into the harness workspace (or reference this repo via a `f
 
 ```yaml
 - id: suggest-prompt
-  name: '@deepseek-ai/dsh-suggest-prompt'
+  name: '@studyzy/dsh-suggest-prompt'
   config:
     maxInputBytes: 4096
     maxOutputTokens: 512
@@ -177,7 +177,7 @@ Put the two packages into the harness workspace (or reference this repo via a `f
     acceptKey: Tab
 
 - id: ui-suggest-prompt
-  name: '@deepseek-ai/dsh-client-ui-suggest-prompt'
+  name: '@studyzy/dsh-client-ui-suggest-prompt'
 ```
 
 Omit both `provider` and `model` to inherit the route of the most recently logged main request — no need to configure a model just for suggestions.

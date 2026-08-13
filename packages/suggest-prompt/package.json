@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-suggest-prompt",
+  "name": "@studyzy/dsh-suggest-prompt",
   "description": "Generate a single suggested next prompt for the user after each completed agent turn, surfaced as ghost text in the web composer",
   "version": "0.1.0",
   "publishConfig": {

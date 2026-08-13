@@ -10,7 +10,7 @@ import LlmRuntime, { createAssistantMessage, createUserMessage, LlmAdapter } fro
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
-import * as suggestPromptPlugin from '@deepseek-ai/dsh-suggest-prompt'
+import * as suggestPromptPlugin from '@studyzy/dsh-suggest-prompt'
 
 let root: string | undefined
 let context: Context | undefined
@@ -39,7 +39,7 @@ async function loadComposition(): Promise<Context> {
     "- name: '@deepseek-ai/dsh-llm'",
     "- name: '@deepseek-ai/dsh-session'",
     "- name: '@deepseek-ai/dsh-session-projection'",
-    "- name: '@deepseek-ai/dsh-suggest-prompt'",
+    "- name: '@studyzy/dsh-suggest-prompt'",
     '  config:',
     '    maxInputBytes: 1000',
     '    maxOutputTokens: 32',
@@ -58,7 +58,7 @@ async function loadComposition(): Promise<Context> {
     ['@deepseek-ai/dsh-llm', LlmRuntime],
     ['@deepseek-ai/dsh-session', SessionStore],
     ['@deepseek-ai/dsh-session-projection', SessionProjectionRegistry],
-    ['@deepseek-ai/dsh-suggest-prompt', suggestPromptPlugin],
+    ['@studyzy/dsh-suggest-prompt', suggestPromptPlugin],
   ])
   context.loader.internal = {
     version: 'v2',

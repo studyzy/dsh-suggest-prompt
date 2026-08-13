@@ -4,7 +4,7 @@
  * client-safe outlet) because these declarations pull dsh-llm into the
  * program — the one-program-per-side layout forbids that on client
  * aggregates.
- * @module @deepseek-ai/dsh-suggest-prompt
+ * @module @studyzy/dsh-suggest-prompt
  */
 
 import type { Message } from '@deepseek-ai/dsh-llm'

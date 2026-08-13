@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-client-ui-suggest-prompt`.
- * @module @deepseek-ai/dsh-client-ui-suggest-prompt/invariant
+ * Package-owned invariant companion for `@studyzy/dsh-client-ui-suggest-prompt`.
+ * @module @studyzy/dsh-client-ui-suggest-prompt/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-client-ui-suggest-prompt'
+const PACKAGE_NAME = '@studyzy/dsh-client-ui-suggest-prompt'
 
 /** Cordis companion plugin name. */
 export const name = 'client-ui-suggest-prompt-invariant'
