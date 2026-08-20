@@ -1,13 +1,15 @@
 # dsh-suggest-prompt
 
-为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 开发的「建议提示词」插件：每个 agent 回合完成后，通过一次有界的辅助 LLM 调用，在会话日志中写入**一条建议的下一条提示词**；Web 输入框在草稿为空时把它渲染成浅灰色幽灵文本，按 **Tab**（默认）即可采纳进草稿（与 Claude Code 一致）。
+为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 开发的「建议提示词」插件：每个 agent 回合完成后，通过一次有界的辅助 LLM 调用，在会话日志中写入**一条建议的下一条提示词**；Web 端把它渲染成输入框内部的浅色幽灵占位文字，按 **Tab**（默认）即可采纳进草稿（与 Claude Code 一致）。
+
+> 想快速上手？直接看 **[使用说明](USAGE.zh.md)**（面向终端用户的操作指南）。
 
 本仓库是这两个包的**权威源码**（source of record），由两个包构成：
 
 | 包 | 作用 |
 |---|---|
 | [`@studyzy/dsh-suggest-prompt`](packages/suggest-prompt) | 宿主插件：在 `turn/end`（reason=`completed`）时生成建议，发布 `suggestPrompt` 会话投影。 |
-| [`@studyzy/dsh-client-ui-suggest-prompt`](packages/ui-suggest-prompt) | 浏览器插件：读取投影，把建议推入输入框的幽灵装饰（`InputActions.setGhost`），按配置的快捷键填入草稿。 |
+| [`@studyzy/dsh-client-ui-suggest-prompt`](packages/ui-suggest-prompt) | 浏览器插件：读取投影，把建议渲染为输入框内部的浅色幽灵占位文字（`inputActions.setDraft`），按配置的快捷键填入草稿。 |
 
 ## 特性
 
@@ -24,7 +26,7 @@
 ### 前置条件
 
 - Node.js `^22.19` 或 `>=24`、pnpm。
-- 一个基于 deepseek-harness 的 dsh 部署（web profile）。Web 输入框需要具备「幽灵输入」能力（`InputActions.setGhost`）；请确认所用 harness 版本已内置该输入机能力。
+- 一个基于 deepseek-harness 的 dsh 部署（web profile）。浏览器端需要 `conversation.input.overlay` 槽位与 `inputActions.setDraft`（deepseek-harness 的标准 web 输入机均已提供）。
 
 ### 通过 npm 安装（发布后）
 
@@ -79,8 +81,8 @@ npm install @studyzy/dsh-suggest-prompt @studyzy/dsh-client-ui-suggest-prompt
 
 - 宿主在 `turn/end`（reason=`completed`）时触发生成；按会话 + 回合去重，下一个完成回合会中止上一个在途生成。
 - 建议写入会话日志的 `suggest-prompt/suggested` 事件，`suggestPrompt` 投影把它暴露给 Web 端。
-- 幽灵文本只在满足以下条件时显示：建议对应**最新**完成回合、agent 空闲、草稿为空；键入即隐藏，删回空草稿重新显示。
-- 按 `acceptKey`（默认 Tab）把建议填入草稿（可编辑后再发送）；焦点不在输入框或处于 IME 组合输入时不触发，Tab 也只在显示幽灵时才被拦截（否则保持默认焦点行为）。
+- 幽灵文字只在满足以下条件时显示：建议对应**最新**完成回合、agent 空闲、草稿为空；键入即隐藏，删回空草稿重新显示。
+- 按 `acceptKey`（默认 Tab）把建议填入草稿（可编辑后再发送）；焦点不在输入框或处于 IME 组合输入时不触发，Tab 也只在显示幽灵文字时才被拦截（否则保持默认焦点行为）。
 
 ## 模型体验
 
@@ -97,7 +99,7 @@ npm install @studyzy/dsh-suggest-prompt @studyzy/dsh-client-ui-suggest-prompt
 
 ## 已知限制
 
-- 每个完成回合都会生成（与输入框是否已有内容无关），幽灵文本只在草稿为空时显示。
+- 每个完成回合都会生成（与输入框是否已有内容无关），幽灵文字只在草稿为空时显示。
 - 被中止（取代）的生成不会为较早回合留下建议。
 - 空回复或被过滤的回复 = 该回合无建议：不写 `suggest-prompt/suggested` 事件，投影保持 `null`，也不记录警告。
 - 投影保留最后一条建议：重新打开旧会话会显示其最终建议，且不发起新的模型调用。
@@ -122,14 +124,14 @@ MIT
 
 # dsh-suggest-prompt
 
-Suggested-next-prompt plugin for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). After every completed agent turn, a bounded auxiliary LLM call writes **one suggested next prompt** into the session log; the web composer renders it as ghost text in the empty input — press **Tab** (default) to adopt it into the draft (the Claude Code behavior).
+Suggested-next-prompt plugin for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). After every completed agent turn, a bounded auxiliary LLM call writes **one suggested next prompt** into the session log; the web side renders it as ghost placeholder text inside the composer — press **Tab** (default) to adopt it into the draft (the Claude Code behavior).
 
 This repository is the authoritative source of record for the two packages:
 
 | Package | Role |
 |---|---|
 | [`@studyzy/dsh-suggest-prompt`](packages/suggest-prompt) | Host plugin: generates the suggestion on `turn/end` (reason `completed`) and publishes the `suggestPrompt` session projection. |
-| [`@studyzy/dsh-client-ui-suggest-prompt`](packages/ui-suggest-prompt) | Browser plugin: reads the projection, pushes the suggestion into the composer's ghost decoration (`InputActions.setGhost`), and fills the draft on the configured shortcut. |
+| [`@studyzy/dsh-client-ui-suggest-prompt`](packages/ui-suggest-prompt) | Browser plugin: reads the projection, renders the suggestion as ghost placeholder text inside the composer (`inputActions.setDraft`), and fills the draft on the configured shortcut. |
 
 ## Features
 
@@ -146,7 +148,7 @@ This repository is the authoritative source of record for the two packages:
 ### Prerequisites
 
 - Node.js `^22.19` or `>=24`, pnpm.
-- A dsh deployment built from the DeepSeek Harness (web profile). The web composer must expose the ghost-input capability (`InputActions.setGhost`); verify your harness version ships that input-machine seam.
+- A dsh deployment built from the DeepSeek Harness (web profile). The browser side needs the `conversation.input.overlay` slot and `inputActions.setDraft` — both standard in the deepseek-harness web input machine.
 
 ### From npm (once published)
 
@@ -202,7 +204,7 @@ Omit both `provider` and `model` to inherit the route of the most recently logge
 - The host triggers generation on `turn/end` (reason `completed`), deduplicated per session and turn; the next completed turn aborts the in-flight generation.
 - The suggestion is appended to the session log as the `suggest-prompt/suggested` event, and the `suggestPrompt` projection exposes it to the web side.
 - The ghost text shows only when the suggestion answers the **latest** completed turn, the agent is idle, and the draft is empty; typing hides it, deleting back to an empty draft re-shows it.
-- Pressing `acceptKey` (default Tab) fills the draft (editable, not sent). It is ignored while focus is outside the composer or during IME composition; Tab is intercepted only while a ghost is displayed (otherwise it keeps its default focus behavior).
+- Pressing `acceptKey` (default Tab) fills the draft (editable, not sent). It is ignored while focus is outside the composer or during IME composition; Tab is intercepted only while ghost text is displayed (otherwise it keeps its default focus behavior).
 
 ## Model Experience
 
@@ -219,7 +221,7 @@ Omit both `provider` and `model` to inherit the route of the most recently logge
 
 ## Known Limitations
 
-- Generation runs after every completed turn regardless of whether the composer already holds text; the ghost is only *displayed* while the draft is empty.
+- Generation runs after every completed turn regardless of whether the composer already holds text; the ghost text is only *displayed* while the draft is empty.
 - A superseded (aborted) generation leaves no suggestion for the older turn.
 - An empty or filtered reply means "no suggestion" for that turn: no `suggest-prompt/suggested` event is written, the projection stays `null`, and no warning is logged.
 - The projection persists the last suggestion, so reopening an old session shows its final suggestion without a new model call.

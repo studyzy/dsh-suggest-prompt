@@ -1,6 +1,6 @@
 {
   "name": "@studyzy/dsh-client-ui-suggest-prompt",
-  "description": "Ghost suggestion surface: renders the host-computed suggest-prompt suggestion as the composer's empty-draft placeholder, adopted via a configurable shortcut (default Tab)",
+  "description": "Suggested-next-prompt surface: renders the host-computed suggest-prompt suggestion as ghost placeholder text inside the composer, adopted via a configurable shortcut (default Tab)",
   "version": "0.1.0",
   "publishConfig": {
     "access": "public"
@@ -52,20 +52,20 @@
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-client-runtime": "^0.0.1-rc.1",
-    "@deepseek-ai/dsh-client-ui-conversation": "^0.0.1-rc.1",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.0.1-rc.1",
-    "@deepseek-ai/dsh-invariants": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-invariants": "^0.1.0-rc.8",
     "@studyzy/dsh-suggest-prompt": "workspace:*",
     "react": "^18.2.0"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-client-runtime": "^0.0.1-rc.1",
-    "@deepseek-ai/dsh-client-test-runtime": "^0.0.1-rc.1",
-    "@deepseek-ai/dsh-client-ui-conversation": "^0.0.1-rc.1",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.0.1-rc.1",
-    "@deepseek-ai/dsh-invariants": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-client-test-runtime": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-invariants": "^0.1.0-rc.8",
     "@studyzy/dsh-suggest-prompt": "workspace:*",
     "@testing-library/react": "^16.1.0",
     "@types/node": "^22.10.0",

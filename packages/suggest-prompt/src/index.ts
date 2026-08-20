@@ -2,7 +2,7 @@
  * suggest-prompt plugin: after every completed agent turn, generate one
  * suggested next prompt for the user through a bounded auxiliary LLM call and
  * publish it as the `suggestPrompt` session projection (the web composer
- * renders it as ghost text). Host-driven on `turn/end` (completed); generation
+ * renders it as ghost placeholder text). Host-driven on `turn/end` (completed); generation
  * is per-session deduplicated by turn and superseded on the next completed
  * turn. The projection unit activates only where a projection registry is
  * composed (headless assemblies stay unaffected).

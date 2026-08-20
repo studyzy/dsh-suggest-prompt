@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Host plugin that, after every completed agent turn, generates **one suggested next prompt** for the user through a bounded auxiliary `ctx.llm` call. The suggestion is appended to the session log as the `suggest-prompt/suggested` event, and the `suggestPrompt` session projection surfaces it to the web composer as ghost text (see `@studyzy/dsh-client-ui-suggest-prompt`).
+Host plugin that, after every completed agent turn, generates **one suggested next prompt** for the user through a bounded auxiliary `ctx.llm` call. The suggestion is appended to the session log as the `suggest-prompt/suggested` event, and the `suggestPrompt` session projection surfaces it to the web composer as ghost placeholder text inside the input (see `@studyzy/dsh-client-ui-suggest-prompt`).
 
 Generation is host-driven on `turn/end` with reason `completed`, deduplicated per session and turn, and superseded (aborted) when the next completed turn arrives. The plugin carries all of its own deployment policy: routes, byte/token/time bounds, transcript bounds, and the suggestion length cap.
 
@@ -45,7 +45,7 @@ No main-request invalidation. The auxiliary request uses the configured or logge
 
 ## Known Limitations and Deferred Work
 
-- Generation runs after every completed turn regardless of whether the composer already holds text; the ghost is only *displayed* while the draft is empty.
+- Generation runs after every completed turn regardless of whether the composer already holds text; the ghost text is only *displayed* while the draft is empty.
 - A superseded (aborted) generation leaves no suggestion for the older turn; only the newest turn's suggestion is published.
 - An empty or filtered model reply means "no suggestion" for that turn: no `suggest-prompt/suggested` event is written, the projection stays `null`, and no warning is logged.
 - The projection persists the last suggestion, so reopening an old session shows its final suggestion without a new model call.

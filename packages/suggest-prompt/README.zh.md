@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-宿主插件：在每个完成的智能体回合之后，通过一次有界的辅助 `ctx.llm` 调用，为用户生成**一条建议的下一条提示词**。建议以 `suggest-prompt/suggested` 事件写入会话日志，`suggestPrompt` 会话投影将其推送到 Web 输入框显示为幽灵文本（见 `@studyzy/dsh-client-ui-suggest-prompt`）。
+宿主插件：在每个完成的智能体回合之后，通过一次有界的辅助 `ctx.llm` 调用，为用户生成**一条建议的下一条提示词**。建议以 `suggest-prompt/suggested` 事件写入会话日志，`suggestPrompt` 会话投影将其推送到 Web 输入框内部的幽灵占位文字（见 `@studyzy/dsh-client-ui-suggest-prompt`）。
 
 生成由宿主在 `turn/end`（reason 为 `completed`）时驱动，按会话与回合去重，并在下一个完成回合到来时中止被取代的生成。插件自带全部部署策略：路由、字节/令牌/超时上限、转录范围与建议长度上限。
 

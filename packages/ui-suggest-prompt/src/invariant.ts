@@ -15,7 +15,7 @@ export const name = 'client-ui-suggest-prompt-invariant'
 export const inject = ['invariants']
 
 /**
- * No runtime invariant: a single conversation.input.dock bridge whose disposal
+ * No runtime invariant: a single conversation.input.overlay bridge whose disposal
  * is proven by the HMR-safety spec — the plugin owns no store (state arrives
  * on the suggestPrompt projection), emits no cordis events, and holds no
  * cross-plugin mutable state.

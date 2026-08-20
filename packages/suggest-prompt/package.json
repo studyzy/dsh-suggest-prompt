@@ -1,6 +1,6 @@
 {
   "name": "@studyzy/dsh-suggest-prompt",
-  "description": "Generate a single suggested next prompt for the user after each completed agent turn, surfaced as ghost text in the web composer",
+  "description": "Generate a single suggested next prompt for the user after each completed agent turn, surfaced as ghost placeholder text in the web composer",
   "version": "0.1.0",
   "publishConfig": {
     "access": "public"
@@ -41,11 +41,11 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-invariants": "^0.0.1-rc.1",
-    "@deepseek-ai/dsh-llm": "^0.0.1-rc.1",
-    "@deepseek-ai/dsh-session": "^0.0.1-rc.1",
-    "@deepseek-ai/dsh-session-projection": "^0.0.1-rc.1",
-    "@deepseek-ai/dsh-timeout": "^0.0.1-rc.1"
+    "@deepseek-ai/dsh-invariants": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-llm": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-session": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-session-projection": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-timeout": "^0.1.0-rc.8"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.1",
@@ -55,12 +55,12 @@
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/cordis-plugin-include": "^1.0.6",
     "@deepseek-ai/cordis-plugin-loader": "^1.0.2",
-    "@deepseek-ai/dsh-invariants": "^0.0.1-rc.1",
-    "@deepseek-ai/dsh-llm": "^0.0.1-rc.1",
-    "@deepseek-ai/dsh-llm-deepseek": "^0.0.1-rc.1",
-    "@deepseek-ai/dsh-session": "^0.0.1-rc.1",
-    "@deepseek-ai/dsh-session-projection": "^0.0.1-rc.1",
-    "@deepseek-ai/dsh-timeout": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-invariants": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-llm": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-llm-deepseek": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-session": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-session-projection": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-timeout": "^0.1.0-rc.8",
     "@types/node": "^22.10.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8"

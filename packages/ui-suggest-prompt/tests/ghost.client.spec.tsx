@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 /**
- * GhostSuggestion bridge behavior: the computed ghost text (projection turn
- * matches the latest completed turn, session idle, empty draft) is pushed
- * through inputActions.setGhost, and the configured accept shortcut (default
- * Tab, like Claude Code) fills the draft through setDraft while the composer
- * textarea holds focus. The component renders nothing.
+ * Ghost suggestion bridge behavior: the computed suggestion (projection turn
+ * matches the latest completed turn, session idle, empty draft) is rendered as
+ * light placeholder text inside the composer (data-suggest-prompt-ghost), and
+ * the configured accept shortcut (default Tab, like Claude Code) fills the
+ * draft through setDraft while the composer textarea holds focus.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
@@ -32,7 +32,6 @@ function kit(over: {
   draft?: string
   projection?: SuggestPromptProjection | undefined
 } = {}) {
-  const setGhost = vi.fn()
   const setDraft = vi.fn()
   const session = {
     running: over.running ?? false,
@@ -43,9 +42,19 @@ function kit(over: {
     useSession: (selector: (s: ConversationSnapshot) => unknown) => selector(session as ConversationSnapshot),
     useInput: (selector: (s: { draft: string }) => unknown) => selector({ draft: over.draft ?? '' }),
     useProjection: (key: string) => (key === 'suggestPrompt' ? over.projection : undefined),
-    inputActions: { setGhost, setDraft },
+    inputActions: { setDraft },
   } as unknown as GhostSuggestionProps
-  return { setGhost, setDraft, props }
+  return { setDraft, props }
+}
+
+/** The rendered ghost layer element, or null when no ghost shows. */
+function ghostLayer(): HTMLElement | null {
+  return document.querySelector('[data-suggest-prompt-ghost]')
+}
+
+/** The visible ghost text content, or '' when no ghost shows. */
+function ghostText(): string {
+  return ghostLayer()?.textContent ?? ''
 }
 
 /** Focus a throwaway textarea and return it (removed by the caller's cleanup). */
@@ -64,55 +73,49 @@ function press(init: KeyboardEventInit): KeyboardEvent {
 }
 
 describe('GhostSuggestion bridge', () => {
-  it('pushes the suggestion into the ghost when it answers the latest completed turn on an idle empty draft', () => {
-    const { setGhost, props } = kit({ projection: SUGGESTION })
+  it('renders the suggestion when it answers the latest completed turn on an idle empty draft', () => {
+    const { props } = kit({ projection: SUGGESTION })
     render(<GhostSuggestion {...props} />)
-    expect(setGhost).toHaveBeenCalledWith('继续修复登录页')
+    expect(ghostText()).toBe('继续修复登录页')
   })
 
-  it('clears the ghost while the agent is running', () => {
-    const { setGhost, props } = kit({ projection: SUGGESTION, running: true })
+  it('renders nothing while the agent is running', () => {
+    const { props } = kit({ projection: SUGGESTION, running: true })
     render(<GhostSuggestion {...props} />)
-    expect(setGhost).toHaveBeenCalledWith('')
+    expect(ghostLayer()).toBeNull()
   })
 
-  it('clears the ghost while the draft has text', () => {
-    const { setGhost, props } = kit({ projection: SUGGESTION, draft: '在输入' })
+  it('renders nothing while the draft has text', () => {
+    const { props } = kit({ projection: SUGGESTION, draft: '在输入' })
     render(<GhostSuggestion {...props} />)
-    expect(setGhost).toHaveBeenCalledWith('')
+    expect(ghostLayer()).toBeNull()
   })
 
-  it('clears the ghost when the suggestion answers an older completed turn', () => {
-    const { setGhost, props } = kit({ projection: SUGGESTION, turnEnds: new Map([[5, 50]]) })
+  it('renders nothing when the suggestion answers an older completed turn', () => {
+    const { props } = kit({ projection: SUGGESTION, turnEnds: new Map([[5, 50]]) })
     render(<GhostSuggestion {...props} />)
-    expect(setGhost).toHaveBeenCalledWith('')
+    expect(ghostLayer()).toBeNull()
   })
 
   it('matches the suggestion against the latest of multiple completed turns', () => {
-    const { setGhost, props } = kit({
+    const { props } = kit({
       projection: { ...SUGGESTION, turn: 5 },
       turnEnds: new Map([[3, 30], [5, 50]]),
     })
     render(<GhostSuggestion {...props} />)
-    expect(setGhost).toHaveBeenCalledWith('继续修复登录页')
+    expect(ghostText()).toBe('继续修复登录页')
   })
 
-  it('clears the ghost before the first suggestion or without a projection', () => {
+  it('renders nothing before the first suggestion or without a projection', () => {
     for (const projection of [null, undefined]) {
-      const { setGhost, props } = kit({ projection })
+      const { props } = kit({ projection })
       render(<GhostSuggestion {...props} />)
-      expect(setGhost).toHaveBeenCalledWith('')
+      expect(ghostLayer()).toBeNull()
       cleanup()
     }
   })
 
-  it('renders nothing', () => {
-    const { props } = kit({ projection: SUGGESTION })
-    const { container } = render(<GhostSuggestion {...props} />)
-    expect(container.firstChild).toBeNull()
-  })
-
-  it('Tab fills the draft with the ghost while the composer textarea holds focus', () => {
+  it('Tab fills the draft with the suggestion while the composer textarea holds focus', () => {
     const { setDraft, props } = kit({ projection: SUGGESTION })
     render(<GhostSuggestion {...props} />)
     const textarea = focusedTextarea()
@@ -144,7 +147,7 @@ describe('GhostSuggestion bridge', () => {
     textarea.remove()
   })
 
-  it('an IME composition keydown never accepts the ghost', () => {
+  it('an IME composition keydown never accepts the suggestion', () => {
     const { setDraft, props } = kit({ projection: SUGGESTION })
     render(<GhostSuggestion {...props} />)
     const textarea = focusedTextarea()
@@ -155,7 +158,7 @@ describe('GhostSuggestion bridge', () => {
     textarea.remove()
   })
 
-  it('Tab is ignored when there is no ghost to accept', () => {
+  it('Tab is ignored when there is no suggestion to accept', () => {
     const { setDraft, props } = kit({ projection: null })
     render(<GhostSuggestion {...props} />)
     const textarea = focusedTextarea()
