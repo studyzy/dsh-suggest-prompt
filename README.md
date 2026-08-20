@@ -13,7 +13,9 @@
 
 ## 特性
 
-- **默认轻量**：建议模型默认走 `deepseek-official` / `deepseek-v4-flash`；通过 `provider` / `model` 可换成任意路由（例如本地 OpenAI 兼容网关）。
+- **默认轻量**：不配置 `provider` / `model` 时继承主请求最近一次记录的路由，无需为建议单独选模型；需要时也可显式指定任意路由（例如本地 OpenAI 兼容网关）。
+- **免思考、快速便宜**：建议生成默认携带 `reasoningEffort: off`（DeepSeek 序列化为 `thinking: disabled`），不消耗推理预算；模型不支持该参数时自动去掉并重试一次。
+- **WebUI 设置卡片**：安装后在「设置 → 插件」中出现「建议提示词」卡片，可直接从已安装的 provider 目录选择建议生成使用的 provider / model（或跟随会话路由），保存后下一完成回合生效；也可手写 `~/.dsh/settings.yaml`。
 - **只发最后一轮**：默认只把最后一轮的用户输入与 AI 最终回答发给建议模型（`maxRecentTurns` 默认为 `1`），中间的工具调用 / 推理过程一律不发送。
 - **有界调用**：字节 / 令牌 / 超时上限、转录长度预算、建议可见字符上限，全部可配置。
 - **安全**：转录在发送前脱敏（密钥形状被掩蔽）；输出净化（控制序列、围栏、引号剥离、单行化）并做语义过滤（元文本、评价套话、助手口吻等被当作「无建议」丢弃）。
@@ -60,7 +62,7 @@ npm install @studyzy/dsh-suggest-prompt @studyzy/dsh-client-ui-suggest-prompt
   name: '@studyzy/dsh-client-ui-suggest-prompt'
 ```
 
-`provider` / `model` 同时省略时，会继承当前主请求最近一次记录的路由，无需为建议单独配置模型。
+`provider` / `model` 可分别设置：设置的一方覆盖主请求路由的对应字段，省略的一方自动继承主请求最近一次记录的路由；两者都省略则完全跟随主请求路由。
 
 ## 配置
 
@@ -72,10 +74,19 @@ npm install @studyzy/dsh-suggest-prompt @studyzy/dsh-client-ui-suggest-prompt
 | `maxRecentTurns` | 转录尾部保留的最近完成回合数 | `1`（只取最后一轮的用户输入 + AI 最终回答） |
 | `maxTranscriptChars` | 转录字符预算 | 必填 |
 | `maxSuggestionChars` | 建议的可见字符上限 | 必填 |
-| `provider` / `model` | 显式路由对；同时省略则继承主请求路由 | 继承 |
+| `provider` / `model` | 各自独立覆盖主请求路由的对应字段；省略的字段自动继承主请求路由。可在 WebUI「建议提示词」设置卡片中编辑，或写入 `~/.dsh/settings.yaml` | 继承 |
 | `acceptKey` | 采纳建议的输入框快捷键 | `Tab`（可写 `Alt+Slash`、`Ctrl+Enter` 等） |
 
-> **`maxOutputTokens` 提示**：如果建议模型是推理模型（回答前会「思考」），思考会消耗输出预算；`maxOutputTokens` 偏小时，流会在输出建议文本之前就以 `max-tokens` 结束。给推理模型留足预算（例如 `512`）。
+> **`maxOutputTokens` 提示**：建议生成默认关闭思考（`reasoningEffort: off`），推理不消耗输出预算；但对无法关闭思考的模型（如部分 pi-ai 路由）会降级重试，此时思考仍会消耗预算——`maxOutputTokens` 偏小时，流会在输出建议文本之前就以 `max-tokens` 结束。这类模型请留足预算（例如 `512`）。
+
+### 在 WebUI 设置中配置建议模型
+
+挂载 `ui-suggest-prompt` 后，「设置 → 插件」会出现「建议提示词」卡片：
+
+- **Provider / Model**：从已安装的 provider 目录（内置 `DeepSeek` 与 pi-ai 各 provider）中选择建议生成使用的路由；选择「跟随会话路由」则不覆盖，继承主请求路由。
+- 编辑是暂存式的（带「未保存」标记与「放弃 / 保存」按钮），保存会写入 `~/.dsh/settings.yaml` 的 `suggest-prompt` 小节；**保存后下一个完成回合生效**，无需重启。
+- 下拉只会列出目录中显式声明的模型；某 provider 未声明模型列表时，模型字段退化为自由文本输入。
+- 依赖 `dsh-settings` 的设置能力：没有挂载设置服务的组装（如 headless）不显示此卡片，仍可用 `cordis.yml` / 补丁层配置。
 
 ## 工作方式
 
@@ -89,6 +100,7 @@ npm install @studyzy/dsh-suggest-prompt @studyzy/dsh-client-ui-suggest-prompt
 - **系统提示词**：把模型限定为「以用户口吻预测下一条提示词」，禁止生成内容或元文本，给出具体正反例；回复语言跟随会话（最后一条用户消息含 CJK → `简体中文`，否则 `English`）。
 - **模型看到的输入**：默认只有最后一轮的 `[User Message]` / `[Assistant Response]` 带标签块（已脱敏、受 `maxTranscriptChars` 约束）。
 - **请求前记录**：确切的框架化输入与系统提示在派发前写入 `suggest-prompt/request` 事件，满足「模型可见 ⟺ 日志可重建」。
+- **免思考**：辅助请求默认携带 `reasoningEffort: off`（DeepSeek 序列化为 `thinking: disabled`），追求快速与低成本；模型不支持时自动去掉该字段重试一次（拒绝发生在任何网络 I/O 之前，几乎无额外开销）。
 - **成本**：每个完成回合至多一次辅助请求，受 `maxInputBytes` / `maxOutputTokens` 约束；主 agent 请求不增加任何 token。
 
 ## 安全
@@ -103,7 +115,7 @@ npm install @studyzy/dsh-suggest-prompt @studyzy/dsh-client-ui-suggest-prompt
 - 被中止（取代）的生成不会为较早回合留下建议。
 - 空回复或被过滤的回复 = 该回合无建议：不写 `suggest-prompt/suggested` 事件，投影保持 `null`，也不记录警告。
 - 投影保留最后一条建议：重新打开旧会话会显示其最终建议，且不发起新的模型调用。
-- 建议模型的路由与预算由部署配置决定；推理模型需要更大的 `maxOutputTokens`。
+- 建议模型的路由与预算由部署配置决定；无法关闭思考的模型（如部分 pi-ai 路由）会回退为模型默认的推理行为，想获得最快的建议体验，建议选支持关闭思考的路由（如内置 DeepSeek）。
 
 ## 开发
 
@@ -114,7 +126,7 @@ pnpm test       # vitest
 pnpm typecheck
 ```
 
-> **安装说明**：本仓库依赖已发布的 `@deepseek-ai/*` 包（deepseek-harness 工作区）。上游少量内部包（`@deepseek-ai/dsh-compact`、`@deepseek-ai/dsh-environment`）尚未出现在 npm registry，`pnpm install` 可能失败，直到 harness 的 registry 补齐。完整测试矩阵在 harness monorepo 内运行；本仓库是两个包的权威源码副本。
+> **安装说明**：本仓库依赖已发布的 `@deepseek-ai/*` 包（deepseek-harness 工作区）。上游少数内部包（`@deepseek-ai/dsh-compact`、`@deepseek-ai/dsh-type-meta`、`@deepseek-ai/dsh-environment`）尚未出现在 npm registry，本仓库通过根 `package.json` 的 `pnpm.overrides` 把它们映射到本地 `stubs/` 空包，因此 `pnpm install` 可直接成功；等 registry 补齐后可移除 overrides 与 `stubs/`。完整测试矩阵在 harness monorepo 内运行；本仓库是两个包的权威源码副本。
 
 ## 许可
 
@@ -135,7 +147,9 @@ This repository is the authoritative source of record for the two packages:
 
 ## Features
 
-- **Lightweight by default**: the suggestion model defaults to `deepseek-official` / `deepseek-v4-flash`; set `provider` / `model` to route anywhere (for example a local OpenAI-compatible gateway).
+- **Lightweight by default**: without `provider` / `model` the suggestion inherits the route of the most recently logged main request — no model to pick just for suggestions; set them explicitly to route anywhere (for example a local OpenAI-compatible gateway).
+- **No thinking, fast and cheap**: the auxiliary call carries `reasoningEffort: off` by default (DeepSeek serializes it as `thinking: disabled`) so no budget is spent on a chain of thought; models that reject `off` retry once without the field.
+- **WebUI settings card**: after mounting, a "建议提示词" card appears under Settings → Plugins; pick the suggestion provider/model from the installed provider catalog (built-in DeepSeek + pi-ai routes) or keep "follow session route"; staged saves take effect on the next completed turn, and `~/.dsh/settings.yaml` works too.
 - **Last turn only**: by default only the last completed turn's user input and assistant final answer are sent to the suggestion model (`maxRecentTurns` defaults to `1`); intermediate tool calls / reasoning are never included.
 - **Bounded**: byte / token / timeout caps, a transcript budget, and a visible-character cap on the suggestion — all configurable.
 - **Safe**: transcripts are secret-redacted before framing; output is sanitized (control sequences, fences, quotes stripped, single line) and semantically filtered (meta-text, evaluative filler, assistant-voice phrasing are dropped as "no suggestion").
@@ -182,7 +196,7 @@ Put the two packages into the harness workspace (or reference this repo via a `f
   name: '@studyzy/dsh-client-ui-suggest-prompt'
 ```
 
-Omit both `provider` and `model` to inherit the route of the most recently logged main request — no need to configure a model just for suggestions.
+`provider` / `model` can be set independently: a set member overrides the matching member of the main request route, an omitted member inherits the most recently logged main request route, and omitting both follows the main request route entirely.
 
 ## Configuration
 
@@ -194,10 +208,19 @@ Omit both `provider` and `model` to inherit the route of the most recently logge
 | `maxRecentTurns` | Transcript tail keeps at most this many recent completed turns | `1` (only the last turn's user input + assistant final answer) |
 | `maxTranscriptChars` | Transcript character budget | required |
 | `maxSuggestionChars` | Visible-character cap for the suggestion | required |
-| `provider` / `model` | Explicit route pair; omit both to inherit the main request route | inherited |
+| `provider` / `model` | Each independently overrides the matching member of the main request route; omitted members inherit the main route. Editable from the WebUI "建议提示词" settings card, or via `~/.dsh/settings.yaml` | inherited |
 | `acceptKey` | Composer shortcut that adopts a displayed suggestion | `Tab` (`Alt+Slash`, `Ctrl+Enter`, ...) |
 
-> **On `maxOutputTokens`**: if the suggestion model reasons before answering, thinking consumes the output budget. A small `maxOutputTokens` ends the stream with `max-tokens` before any suggestion text is produced — leave a generous budget (e.g. `512`) for reasoning models.
+> **On `maxOutputTokens`**: suggestion generation disables thinking by default (`reasoningEffort: off`), so reasoning does not consume the output budget; but a model that cannot turn thinking off (some pi-ai routes) falls back to a retry where thinking still spends budget — a small `maxOutputTokens` then ends the stream with `max-tokens` before any suggestion text is produced. Leave a generous budget (e.g. `512`) for such models.
+
+### Configure the suggestion model in the WebUI
+
+Once `ui-suggest-prompt` is mounted, a "建议提示词" card appears under Settings → Plugins:
+
+- **Provider / Model**: pick the route the auxiliary call uses from the installed provider catalog (built-in DeepSeek + pi-ai routes); choosing "Follow session route" keeps the main request route.
+- Edits are staged (with an "Unsaved" marker and Discard / Save buttons); saving writes the `suggest-prompt` section of `~/.dsh/settings.yaml`, and **takes effect on the next completed turn** — no restart needed.
+- The dropdowns list only explicitly declared models; a provider without a declared model list degrades the model field to free-text input.
+- This rides the `dsh-settings` capability: assemblies without a settings service (e.g. headless) do not show the card and keep using `cordis.yml` / the patch layer.
 
 ## How it works
 
@@ -211,6 +234,7 @@ Omit both `provider` and `model` to inherit the route of the most recently logge
 - **System prompt**: binds the model to predicting the user's next prompt in the user's own voice, forbids generating content or meta-text, and gives concrete examples and anti-examples; the reply language follows the conversation (`简体中文` when the last user message contains CJK, otherwise `English`).
 - **What the model sees**: by default only the last turn, framed as labelled `[User Message]` / `[Assistant Response]` blocks (redacted, bounded by `maxTranscriptChars`).
 - **Pre-dispatch logging**: the exact framed input and system prompt are recorded in the `suggest-prompt/request` event before dispatch, satisfying the model-visible ⟺ logged invariant.
+- **No thinking**: the auxiliary request carries `reasoningEffort: off` by default (DeepSeek serializes it as `thinking: disabled`) for speed and low cost; a model that rejects `off` retries once without the field (the rejection happens before any network I/O, so the retry is nearly free).
 - **Cost**: at most one auxiliary request per completed turn, bounded by `maxInputBytes` / `maxOutputTokens`; the main agent request gains zero tokens.
 
 ## Security
@@ -225,7 +249,7 @@ Omit both `provider` and `model` to inherit the route of the most recently logge
 - A superseded (aborted) generation leaves no suggestion for the older turn.
 - An empty or filtered reply means "no suggestion" for that turn: no `suggest-prompt/suggested` event is written, the projection stays `null`, and no warning is logged.
 - The projection persists the last suggestion, so reopening an old session shows its final suggestion without a new model call.
-- The suggestion route and budget are deployment configuration; reasoning models need a larger `maxOutputTokens`.
+- The suggestion route and budget are deployment configuration; a model that cannot turn thinking off (some pi-ai routes) falls back to its default reasoning behavior — for the fastest suggestions, pick a route that supports `off` (such as the built-in DeepSeek).
 
 ## Development
 
@@ -236,7 +260,7 @@ pnpm test       # vitest
 pnpm typecheck
 ```
 
-> **Install caveat**: this repo depends on the published `@deepseek-ai/*` packages (the DeepSeek Harness workspace). A small number of internal packages referenced by the published `dsh-*` releases are not yet on the npm registry (`@deepseek-ai/dsh-compact`, `@deepseek-ai/dsh-environment`), so `pnpm install` may fail until the harness registry is complete. The full test matrix runs inside the harness monorepo; this repo is the source-of-record copy for the two packages.
+> **Install caveat**: this repo depends on the published `@deepseek-ai/*` packages (the DeepSeek Harness workspace). A small number of internal packages referenced by the published `dsh-*` releases are not yet on the npm registry (`@deepseek-ai/dsh-compact`, `@deepseek-ai/dsh-type-meta`, `@deepseek-ai/dsh-environment`); the root `package.json` `pnpm.overrides` map them to the local empty `stubs/` packages, so `pnpm install` succeeds out of the box — remove the overrides and `stubs/` once the registry is complete. The full test matrix runs inside the harness monorepo; this repo is the source-of-record copy for the two packages.
 
 ## License
 

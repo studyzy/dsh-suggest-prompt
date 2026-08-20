@@ -23,5 +23,15 @@ export default defineConfig({
   test: {
     include: ['packages/*/tests/**/*.spec.ts', 'packages/*/tests/**/*.spec.tsx'],
     exclude: ['**/provider.e2e.ts'],
+    // The published dsh-client-* packages ship CSS modules (e.g. primitives'
+    // StateDot.module.css); jsdom cannot import them as raw Node files. Inline
+    // the published client dependencies so Vitest's pipeline (CSS modules as
+    // identity class maps) applies to their bundled output too.
+    css: true,
+    server: {
+      deps: {
+        inline: [/@deepseek-ai\/dsh-client-.*/],
+      },
+    },
   },
 })

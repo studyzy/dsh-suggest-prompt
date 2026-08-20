@@ -12,6 +12,7 @@ import {
   BlockAssembler,
   createUserMessage,
   deepFreeze,
+  ReasoningEffortId,
 } from '@deepseek-ai/dsh-llm'
 import type { FinishReason, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import type { Session } from '@deepseek-ai/dsh-session'
@@ -23,6 +24,23 @@ import type { Config } from './index.ts'
 
 /** Capability-owned timeout reason code for auxiliary suggestion requests. */
 export const SUGGEST_PROMPT_TIMEOUT_CODE = 'SUGGEST_PROMPT_TIMEOUT'
+
+/**
+ * Suggestion generation is an opportunistic, must-be-fast-and-cheap auxiliary
+ * call: reasoning/thinking is disabled. `off` maps to `thinking: disabled` on
+ * the DeepSeek adapter and to `reasoning_effort: off` on OpenAI-compatible
+ * (pi-ai) routes, so the request never spends budget on a chain of thought.
+ */
+const SUGGEST_REASONING_EFFORT = ReasoningEffortId('off')
+
+/**
+ * Informational purpose tag for auxiliary suggestion calls. The published
+ * `GenerateOptions['purpose']` union predates the suggest-prompt capability and
+ * no provider tailors transport for it yet, so the literal widens through
+ * `unknown` once; the runtime value stays `'suggest-prompt'` for providers that
+ * learn it later.
+ */
+const SUGGEST_PURPOSE = 'suggest-prompt' as unknown as Exclude<GenerateOptions['purpose'], undefined>
 
 /** Validated immutable suggestion policy. */
 export interface ResolvedSuggestPromptConfig extends Config {}
@@ -70,15 +88,16 @@ export function resolveSuggestPromptConfig(config: Config): ResolvedSuggestPromp
   if (value.timeoutMs > MAX_TIMER_DELAY_MS) {
     throw new Error(`suggest-prompt: timeoutMs must not exceed ${MAX_TIMER_DELAY_MS}`)
   }
-  const hasProvider = value.provider !== undefined
-  const hasModel = value.model !== undefined
-  if (hasProvider !== hasModel) {
-    throw new Error('suggest-prompt: provider and model must be supplied together')
+  // provider and model are independent per-field overrides of the session route:
+  // either may be set alone and the missing member falls back to the session's
+  // latest logged route (see routeOf). Only a present override is validated.
+  if (value.provider !== undefined
+    && (typeof value.provider !== 'string' || value.provider.length === 0)) {
+    throw new Error('suggest-prompt: provider override must be a non-empty string')
   }
-  if (hasProvider
-    && (typeof value.provider !== 'string' || value.provider.length === 0
-      || typeof value.model !== 'string' || value.model.length === 0)) {
-    throw new Error('suggest-prompt: provider and model overrides must be non-empty strings')
+  if (value.model !== undefined
+    && (typeof value.model !== 'string' || value.model.length === 0)) {
+    throw new Error('suggest-prompt: model override must be a non-empty string')
   }
   if (value.acceptKey !== undefined
     && (typeof value.acceptKey !== 'string' || value.acceptKey.trim().length === 0)) {
@@ -240,7 +259,14 @@ export function buildTranscript(
   }
 }
 
-/** Resolve the explicit route pair or the session's latest logged request header. */
+/**
+ * Resolve the effective route: an explicit override wins for a member, and a
+ * missing member falls back to the session's latest logged request route.
+ * @param session - session whose logged request header supplies the fallback.
+ * @param config - validated suggestion policy.
+ * @returns the complete route, or throws when neither a configured pair nor a
+ * logged session route supplies every member.
+ */
 function routeOf(
   session: Session,
   config: ResolvedSuggestPromptConfig,
@@ -249,10 +275,12 @@ function routeOf(
     return { provider: config.provider, model: config.model }
   }
   const route = session.requestHeader()?.config
-  if (route !== undefined && route.provider.length > 0 && route.model.length > 0) {
-    return { provider: route.provider, model: route.model }
+  const provider = config.provider ?? route?.provider
+  const model = config.model ?? route?.model
+  if (provider !== undefined && model !== undefined && provider.length > 0 && model.length > 0) {
+    return { provider, model }
   }
-  throw new Error('suggest-prompt: no logged request route is available; configure provider and model together')
+  throw new Error('suggest-prompt: no complete route is available; configure provider and model, or run a turn that logs a session route')
 }
 
 /** Translate terminal finish reasons into an auxiliary-call failure. */
@@ -314,14 +342,15 @@ export async function generateSuggestion(
     source: { kind: 'plugin', plugin: 'dsh-suggest-prompt' },
   })]
   using callDeadline = deadline(signal, config.timeoutMs, SUGGEST_PROMPT_TIMEOUT_CODE)
-  const options: GenerateOptions = deepFreeze({
+  const requestOptions = (reasoningOff: boolean): GenerateOptions => deepFreeze({
     provider: route.provider,
     model: route.model,
     messages,
     system,
     maxTokens: config.maxOutputTokens,
     sessionId: session.id,
-    purpose: 'suggest-prompt',
+    purpose: SUGGEST_PURPOSE,
+    ...(reasoningOff ? { reasoningEffort: SUGGEST_REASONING_EFFORT } : {}),
     signal: callDeadline.signal,
   })
   const requestEvent: SuggestPromptRequested = {
@@ -333,17 +362,35 @@ export async function generateSuggestion(
     messages,
     maxTokens: config.maxOutputTokens,
   }
-  const request = session.append('suggest-prompt/request', requestEvent)
+  // The request is tried reasoning-off first (fast and cheap); a model whose
+  // adapter rejects `off` (UNSUPPORTED_REASONING_EFFORT) retries without the
+  // override so a suggestion still generates. Each attempt that could reach
+  // the wire appends its own pre-dispatch request event, so the log
+  // reconstructs exactly what the model saw and the suggestion points at the
+  // request that produced it.
+  const firstRequest = session.append('suggest-prompt/request', { ...requestEvent, reasoningOff: true })
   callDeadline.signal.throwIfAborted()
-  const assembler = new BlockAssembler()
-  for await (const chunk of ctx.llm.stream(options)) {
+  const drain = async (options: GenerateOptions): Promise<ReturnType<BlockAssembler['blocks']>> => {
+    const assembler = new BlockAssembler()
+    for await (const chunk of ctx.llm.stream(options)) {
+      callDeadline.signal.throwIfAborted()
+      assembler.push(chunk)
+    }
     callDeadline.signal.throwIfAborted()
-    assembler.push(chunk)
+    const terminalError = finishError(assembler.finish)
+    if (terminalError !== undefined) throw terminalError
+    return assembler.blocks()
   }
-  callDeadline.signal.throwIfAborted()
-  const terminalError = finishError(assembler.finish)
-  if (terminalError !== undefined) throw terminalError
-  const blocks = assembler.blocks()
+  let request = firstRequest
+  let blocks: ReturnType<BlockAssembler['blocks']>
+  try {
+    blocks = await drain(requestOptions(true))
+  } catch (error: unknown) {
+    if ((error as { code?: unknown } | null)?.code !== 'UNSUPPORTED_REASONING_EFFORT') throw error
+    // The retry is a distinct wire-visible request; log it before dispatching.
+    request = session.append('suggest-prompt/request', { ...requestEvent, reasoningOff: false })
+    blocks = await drain(requestOptions(false))
+  }
   if (blocks.some(block => block.type === 'tool-call')) {
     throw new Error('suggest-prompt: suggestion output must contain text only')
   }

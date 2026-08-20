@@ -1,0 +1,10 @@
+{
+  "name": "@deepseek-ai/dsh-compact",
+  "version": "0.0.1-rc.1",
+  "description": "Local build stub for an unpublished @deepseek-ai registry package (declared by published dsh-client-runtime but never imported at runtime)",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  }
+}

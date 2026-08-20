@@ -47,6 +47,15 @@ const CSS_TEXT = `
   pointer-events: none;
   user-select: none;
 }
+/* The native composer placeholder (e.g. "给智能体发消息") renders at the same
+   text origin as the ghost, so a suggestion would overlap it while the draft
+   is empty. Hide it for the composer card that carries a visible ghost.
+   WebKit paints placeholder glyphs with -webkit-text-fill-color (which
+   outranks color), so BOTH properties must go transparent. */
+[data-composer-card]:has(.dsh-suggest-prompt-ghost) textarea::placeholder {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
 `
 
 const ROOT_STYLE: CSSProperties = { display: 'contents' }

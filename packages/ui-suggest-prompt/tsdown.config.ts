@@ -11,8 +11,10 @@ const EXTERNALS: readonly string[] = [
   '@deepseek-ai/cordis',
   '@deepseek-ai/dsh-client-runtime/client',
   '@deepseek-ai/dsh-client-ui-conversation/client',
+  '@deepseek-ai/dsh-client-ui-primitives',
   '@deepseek-ai/dsh-client-ui-slots',
   'react',
+  'react/jsx-runtime',
 ]
 
 /**
@@ -32,6 +34,11 @@ const client: UserConfig = {
   clean: false,
   external: [...EXTERNALS],
   noExternal: (id: string) => (EXTERNALS.includes(id) ? undefined : true),
+  // Substitutes the Node idiom `process.env.NODE_ENV` that inlined deps
+  // (react/jsx-runtime guards) reference; the browser has no `process`.
+  define: {
+    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production'),
+  },
   outputOptions: {
     entryFileNames: 'client.js',
     banner: `window.__ModuleLoader__.load({ id: ${JSON.stringify(ID)}, factory: (require) => {`,

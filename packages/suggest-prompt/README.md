@@ -16,10 +16,10 @@ Generation is host-driven on `turn/end` with reason `completed`, deduplicated pe
 | `maxRecentTurns` | Transcript tail keeps at most this many recent completed turns (default 1: only the last completed turn's user input and assistant final answer) |
 | `maxTranscriptChars` | Transcript tail character budget before framing |
 | `maxSuggestionChars` | Visible-character cap for the generated suggestion |
-| `provider` / `model` | Optional explicit route pair; omit both to inherit the session's latest logged request header |
+| `provider` / `model` | Optional per-field overrides of the session route; an omitted member inherits the session's latest logged request header |
 | `acceptKey` | Composer shortcut that accepts a displayed suggestion into the draft (`Tab`, `Alt+Slash`, `Ctrl+Enter`, ...); default `Tab` |
 
-Omit both `provider` and `model` to inherit the exact route from the current logged main request, or set both to route suggestion generation independently. `acceptKey` is carried on every suggestion event and read by the web composer's ghost text.
+Omit both `provider` and `model` to inherit the exact route from the current logged main request, or set either (or both) to override that route's matching member. `acceptKey` is carried on every suggestion event and read by the web composer's ghost text.
 
 ## Security
 

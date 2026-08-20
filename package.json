@@ -13,6 +13,13 @@
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck"
   },
+  "pnpm": {
+    "overrides": {
+      "@deepseek-ai/dsh-compact": "file:./stubs/dsh-compact",
+      "@deepseek-ai/dsh-type-meta": "file:./stubs/dsh-type-meta",
+      "@deepseek-ai/dsh-environment": "file:./stubs/dsh-environment"
+    }
+  },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "lightningcss": "^1.32.0",

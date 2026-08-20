@@ -1,5 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import LlmRuntime, { createAssistantMessage, createUserMessage, LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, Message, StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
@@ -8,6 +9,7 @@ import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import * as suggestPromptPlugin from '@studyzy/dsh-suggest-prompt'
 import type { Config } from '@studyzy/dsh-suggest-prompt'
 import { applySuggestPromptProjection } from '@studyzy/dsh-suggest-prompt'
+import { apply as installCompanion } from '../src/invariant.ts'
 import {
   buildTranscript,
   generateSuggestion,
@@ -16,7 +18,7 @@ import {
   systemPrompt,
 } from '../src/generate.ts'
 import type { SuggestPromptProjection } from '../src/types.ts'
-import type { SuggestPromptSuggested } from '../src/domain.ts'
+import type { SuggestPromptRequested, SuggestPromptSuggested } from '../src/domain.ts'
 
 const CONFIG = {
   maxInputBytes: 1000,
@@ -127,7 +129,7 @@ describe('resolveSuggestPromptConfig', () => {
     expect(Object.isFrozen(resolved)).toBe(true)
   })
 
-  it('rejects a non-object, unknown keys, invalid bounds, and broken route pairs', () => {
+  it('rejects a non-object, unknown keys, invalid bounds, and empty route overrides', () => {
     expect(() => resolveSuggestPromptConfig(null as never)).toThrow(/configuration is required/)
     expect(() => resolveSuggestPromptConfig({ ...CONFIG, bogus: 1 } as never)).toThrow(/unknown config key/)
     expect(() => resolveSuggestPromptConfig({ ...CONFIG, maxInputBytes: 0 })).toThrow(/maxInputBytes/)
@@ -136,13 +138,23 @@ describe('resolveSuggestPromptConfig', () => {
     expect(() => resolveSuggestPromptConfig({ ...CONFIG, maxRecentTurns: -1 })).toThrow(/maxRecentTurns/)
     expect(() => resolveSuggestPromptConfig({ ...CONFIG, maxTranscriptChars: 0 })).toThrow(/maxTranscriptChars/)
     expect(() => resolveSuggestPromptConfig({ ...CONFIG, maxSuggestionChars: 0 })).toThrow(/maxSuggestionChars/)
-    expect(() => resolveSuggestPromptConfig({ ...CONFIG, provider: 'p' })).toThrow(/provider and model/)
-    expect(() => resolveSuggestPromptConfig({ ...CONFIG, model: 'm' })).toThrow(/provider and model/)
-    expect(() => resolveSuggestPromptConfig({ ...CONFIG, provider: '', model: 'm' })).toThrow(/non-empty strings/)
+    expect(() => resolveSuggestPromptConfig({ ...CONFIG, provider: '' })).toThrow(/provider override/)
+    expect(() => resolveSuggestPromptConfig({ ...CONFIG, provider: '', model: 'm' })).toThrow(/provider override/)
+    expect(() => resolveSuggestPromptConfig({ ...CONFIG, model: '' })).toThrow(/model override/)
+    expect(() => resolveSuggestPromptConfig({ ...CONFIG, provider: 3 as never })).toThrow(/provider override/)
     expect(() => resolveSuggestPromptConfig({ ...CONFIG, acceptKey: '' })).toThrow(/acceptKey/)
     expect(() => resolveSuggestPromptConfig({ ...CONFIG, acceptKey: 3 as never })).toThrow(/acceptKey/)
     expect(resolveSuggestPromptConfig(CONFIG).acceptKey).toBeUndefined()
     expect(resolveSuggestPromptConfig({ ...CONFIG, acceptKey: 'Alt+Slash' }).acceptKey).toBe('Alt+Slash')
+  })
+
+  it('accepts a partial route override: either member may stand alone', () => {
+    const providerOnly = resolveSuggestPromptConfig({ ...CONFIG, provider: 'other' })
+    expect(providerOnly.provider).toBe('other')
+    expect(providerOnly.model).toBeUndefined()
+    const modelOnly = resolveSuggestPromptConfig({ ...CONFIG, model: 'other-model' })
+    expect(modelOnly.provider).toBeUndefined()
+    expect(modelOnly.model).toBe('other-model')
   })
 })
 
@@ -274,8 +286,15 @@ describe('suggest-prompt plugin generation', () => {
     expect(adapter.requests[0]).toMatchObject({ provider: 'main', model: 'main-model', purpose: 'suggest-prompt', maxTokens: 32 })
     expect(adapter.requests[0]?.system).toBe(systemPrompt(40, '简体中文'))
 
-    const requestData = session.events.find(event => event.type === 'suggest-prompt/request')!.data as { sourceMessageSeqs: number[] }
-    expect(requestData.sourceMessageSeqs.length).toBe(2)
+    // The bare LlmAdapter declares no reasoning support, so the reasoning-off
+    // attempt is refused before dispatch and the generation retries without the
+    // override. Both attempts are logged pre-dispatch; the suggestion points at
+    // the request that actually produced it (the retry).
+    const requestEvents = session.events.filter(event => event.type === 'suggest-prompt/request')
+    expect(requestEvents).toHaveLength(2)
+    expect((requestEvents[0]?.data as SuggestPromptRequested | undefined)?.reasoningOff).toBe(true)
+    expect((requestEvents[1]?.data as SuggestPromptRequested | undefined)?.reasoningOff).toBe(false)
+    expect((requestEvents[0]?.data as { sourceMessageSeqs: number[] }).sourceMessageSeqs.length).toBe(2)
 
     const suggested = suggestedEvents(session)
     expect(suggested).toHaveLength(1)
@@ -283,9 +302,36 @@ describe('suggest-prompt plugin generation', () => {
       turn: 1, text: '继续修复登录页', truncated: false,
       route: { provider: 'main', model: 'main-model' }, acceptKey: 'Tab',
     })
+    expect(suggested[0]?.requestSeq).toBe(requestEvents[1]?.seq)
 
     const projection = ctx.sessionProjections.snapshot(session).values.suggestPrompt
     expect(projection).toMatchObject({ turn: 1, text: '继续修复登录页', acceptKey: 'Tab' })
+  })
+
+  it('composes a partial route override with the session route', async () => {
+    const ctx = await bench({ ...CONFIG, model: 'override-model' })
+    const adapter = new ImmediateAdapter()
+    ctx.llm.registerAdapter(['main'], adapter)
+    const session = ctx.sessions.create(SessionId('partial-route'))
+    appendTurn(session, 1, '问题', '回答')
+
+    await settle()
+
+    expect(adapter.requests).toHaveLength(1)
+    expect(adapter.requests[0]).toMatchObject({ provider: 'main', model: 'override-model' })
+  })
+
+  it('uses the explicit route pair when both members are configured', async () => {
+    const ctx = await bench({ ...CONFIG, provider: 'other', model: 'other-model' })
+    const adapter = new ImmediateAdapter()
+    ctx.llm.registerAdapter(['main', 'other'], adapter)
+    const session = ctx.sessions.create(SessionId('explicit-route'))
+    appendTurn(session, 1, '问题', '回答')
+
+    await settle()
+
+    expect(adapter.requests).toHaveLength(1)
+    expect(adapter.requests[0]).toMatchObject({ provider: 'other', model: 'other-model' })
   })
 
   it('carries the configured accept key on the suggestion event and projection', async () => {
@@ -426,7 +472,7 @@ describe('suggest-prompt plugin generation', () => {
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 
     await settle()
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('no logged request route'))
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('no complete route is available'))
     expect(adapter.requests).toHaveLength(0)
   })
 
@@ -441,7 +487,7 @@ describe('suggest-prompt plugin generation', () => {
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 
     await settle()
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('no logged request route'))
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('no complete route is available'))
   })
 
   it('drops a repeat turn/end for the same in-flight turn', async () => {
@@ -682,19 +728,25 @@ describe('generateSuggestion direct boundary', () => {
 })
 
 describe('suggest-prompt durable invariant', () => {
-  it('rejects an unsupported event version', async () => {
+  /** A context with the invariant registry and companion mounted over sessions. */
+  async function invariantCtx(): Promise<Context> {
     const ctx = new Context()
+    await ctx.plugin(InvariantRegistry, { enabled: true })
     await ctx.plugin(SessionStore)
+    await ctx.plugin({ inject: ['invariants'], apply: installCompanion })
     contexts.push(ctx)
+    return ctx
+  }
+
+  it('rejects an unsupported event version', async () => {
+    const ctx = await invariantCtx()
     const session = ctx.sessions.create(SessionId('inv-version'))
     expect(() => session.append('suggest-prompt/request', { version: 2 } as never))
       .toThrow(/unsupported version/)
   })
 
   it('rejects a request with an invalid payload', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SessionStore)
-    contexts.push(ctx)
+    const ctx = await invariantCtx()
     const session = ctx.sessions.create(SessionId('inv-request'))
     expect(() => session.append('suggest-prompt/request', {
       version: 1, turn: 'bad', sourceMessageSeqs: [], route: null,
@@ -703,9 +755,7 @@ describe('suggest-prompt durable invariant', () => {
   })
 
   it('rejects a request whose route is not an object', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SessionStore)
-    contexts.push(ctx)
+    const ctx = await invariantCtx()
     const session = ctx.sessions.create(SessionId('inv-route'))
     expect(() => session.append('suggest-prompt/request', {
       version: 1, turn: 1, sourceMessageSeqs: [], route: 'bad',
@@ -714,9 +764,7 @@ describe('suggest-prompt durable invariant', () => {
   })
 
   it('rejects a suggested event with an invalid payload', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SessionStore)
-    contexts.push(ctx)
+    const ctx = await invariantCtx()
     const session = ctx.sessions.create(SessionId('inv-suggested'))
     expect(() => session.append('suggest-prompt/suggested', {
       version: 1, turn: 1, baseSeq: 'x', text: '', truncated: 'y', requestSeq: 1,

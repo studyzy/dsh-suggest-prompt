@@ -16,9 +16,9 @@ import type { ZodType } from 'zod'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 // Type-only: resolves ctx.sessionProjections for the optional unit child.
 import type {} from '@deepseek-ai/dsh-session-projection'
+import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { generateSuggestion, resolveSuggestPromptConfig } from './generate.ts'
-import type { ResolvedSuggestPromptConfig } from './generate.ts'
 import type { SuggestPromptSuggestion } from './types.ts'
 
 // The pure payload outlet (./types.ts, ONE home of the `suggestPrompt`
@@ -101,9 +101,9 @@ export interface Config {
   readonly maxTranscriptChars: number
   /** Visible-character cap for the generated suggestion. */
   readonly maxSuggestionChars: number
-  /** Optional explicit provider route; must be paired with `model`. */
+  /** Optional explicit provider route; missing falls back to the session route. */
   readonly provider?: string
-  /** Optional explicit model id; must be paired with `provider`. */
+  /** Optional explicit model id; missing falls back to the session route. */
   readonly model?: string
   /**
    * Composer shortcut that accepts a displayed suggestion into the draft
@@ -131,13 +131,30 @@ export const name = 'suggest-prompt'
 export const inject = ['llm', 'sessions']
 
 /**
+ * The settings namespace owning the suggestion route. Editable from the WebUI
+ * settings surface (`settings.plugin.item`, keyed by this value) and from
+ * `~/.dsh/settings.yaml`; the cordis.yml entry remains the composition base.
+ */
+export const SUGGEST_PROMPT_NS = settingsNamespace('suggest-prompt')
+
+/**
  * Mount the plugin: listen for completed turns, generate per-session
  * suggestions, and register the `suggestPrompt` projection unit.
  * @param ctx - context exposing the LLM and session services.
  * @param config - required bounded-generation policy.
  */
 export function apply(ctx: Context, config: Config): void {
-  const resolved: ResolvedSuggestPromptConfig = resolveSuggestPromptConfig(config)
+  // The authoritative policy is the settings-resolved section while a settings
+  // service is mounted (composition entry as `base`, user document overrides),
+  // and the composition entry otherwise. installSettingsSection hands over a
+  // THUNK for the live resolved section, so re-resolving at each generation
+  // keeps a settings edit effective on the next completed turn.
+  let source: () => Config = () => config
+  installSettingsSection(ctx, SUGGEST_PROMPT_NS, Config, config, {
+    validate: (value) => { resolveSuggestPromptConfig(value) },
+    setSource: (next) => { source = next },
+    onChange: () => {},
+  })
   const states = new WeakMap<Session, SessionState>()
   const tracked = new Set<SessionState>()
 
@@ -156,6 +173,9 @@ export function apply(ctx: Context, config: Config): void {
     }
     const controller = new AbortController()
     state.pending = { turn, controller }
+    // Resolve the policy from the live source so a settings edit lands on the
+    // next generation; the microtask reads it when the turn settles.
+    const resolved = resolveSuggestPromptConfig(source())
     // session/event is dispatched synchronously inside the committing append;
     // re-appending from that stack reenters the session. Defer to a microtask
     // so the suggestion's own request/suggested events publish cleanly.

@@ -26,6 +26,14 @@ export interface SuggestPromptRequested {
   readonly messages: readonly Message[]
   /** Exact auxiliary output-token cap. */
   readonly maxTokens: number
+  /**
+   * Whether the request carried `reasoningEffort: off`. `true` records a
+   * reasoning-off attempt (which an adapter may refuse before dispatch, after
+   * which the generation retries without the override); `false` records that
+   * retry. Absent on events logged by older builds, where no reasoning
+   * override was ever sent.
+   */
+  readonly reasoningOff?: boolean
 }
 
 /** Whole-value post-success suggestion recorded after the auxiliary call. */

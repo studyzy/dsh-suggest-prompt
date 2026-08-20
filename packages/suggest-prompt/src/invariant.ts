@@ -38,7 +38,10 @@ function validateEvent(event: SessionEvent, fail: InvariantFailure): void {
       || !isRoute(data.route)
       || typeof data.system !== 'string' || data.system.length === 0
       || !Array.isArray(data.messages) || data.messages.length === 0
-      || !isInteger(data.maxTokens)) {
+      || !isInteger(data.maxTokens)
+      // Optional so events logged before `reasoningOff` existed stay valid;
+      // when present it must be the boolean the write side records.
+      || (data.reasoningOff !== undefined && typeof data.reasoningOff !== 'boolean')) {
       fail('suggest-prompt/request carries an invalid request payload')
     }
     return
