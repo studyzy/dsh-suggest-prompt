@@ -59,6 +59,15 @@ function resolvePnpmBinDir(): string {
       if (existsSync(bin)) best = bin
     }
   }
+  // Fall back to npm's global install (e.g. `npm install -g pnpm@10`).
+  if (best === '') {
+    const npmRoot = spawnSync('npm', ['root', '-g'], { encoding: 'utf8' })
+    const npmGlobalNodeModules = (npmRoot.stdout ?? '').trim()
+    if (npmGlobalNodeModules !== '') {
+      const npmGlobalPnpmBin = join(npmGlobalNodeModules, 'pnpm', 'bin')
+      if (existsSync(npmGlobalPnpmBin)) best = npmGlobalPnpmBin
+    }
+  }
   return best
 }
 

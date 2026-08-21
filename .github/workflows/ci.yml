@@ -74,16 +74,15 @@ jobs:
       # spawned `dsh web` install step (the test's resolvePnpmBinDir detects it
       # on PATH and skips its corepack fallback).
       #
-      # `npm install -g pnpm@10` alone is NOT enough: setup-node prepends
-      # `PNPM_HOME` (setup-pnpm's pnpm@9 bin) to PATH, which shadows the npm
-      # global pnpm@10. Write the npm global bin dir to $GITHUB_PATH so it
-      # leads PATH for every later step (and for dsh's own `pnpm` spawn).
+      # Use corepack (ships with Node) to activate pnpm@10 as the `pnpm` on
+      # PATH. `npm install -g pnpm@10` alone is unreliable here: setup-node
+      # prepends PNPM_HOME (setup-pnpm's pnpm@9 bin) and can shadow npm's
+      # global bin.
       - name: Upgrade pnpm for dsh
         run: |
-          npm install -g pnpm@10
-          echo "$(npm prefix -g)/bin" >> "$GITHUB_PATH"
-          # Verify the npm-global pnpm@10 actually leads PATH for later steps.
-          PATH="$(npm prefix -g)/bin:$PATH" pnpm --version
+          corepack enable
+          corepack prepare pnpm@10 --activate
+          pnpm --version
 
       # The latest dsh (rc.8 on the `next` tag) ships the web app dist and
       # manages profile plugins with its own pnpm.
