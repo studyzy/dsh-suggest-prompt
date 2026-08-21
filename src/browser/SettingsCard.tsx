@@ -14,8 +14,9 @@ import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 // Type-only: pulls the 'suggest-prompt.settings' LocaleNamespaceMap merge.
 import type {} from './settings-locales.ts'
-import type { SuggestPromptCardFace, SuggestPromptCardState, RouteOption } from './settings-controller.ts'
+import type { SuggestPromptCardFace, SuggestPromptCardState, RouteOption, SuggestPromptEditField } from './settings-controller.ts'
 import type { SuggestPromptSettingsLocaleKey } from './settings-locales.ts'
+import { encodeKey } from './accept-key.ts'
 
 /** Props the renderer binds for the suggest-prompt card. */
 export type SettingsCardProps =
@@ -223,7 +224,7 @@ function RouteField(props: {
   label: string
   hint: string
   state: SuggestPromptCardState
-  field: 'provider' | 'model'
+  field: SuggestPromptEditField
   options: RouteOption[]
   selectable: boolean
   onEdit: (text: string) => void
@@ -274,6 +275,80 @@ function RouteField(props: {
       <p className="dsh-sug-hint">{hint}</p>
     </div>
   )
+}
+
+/**
+ * A shortcut recorder field: focusing it arms capture, and the next key press
+ * (a main key with any held modifiers, e.g. `Alt`+`Slash`) commits the combo
+ * as its canonical spec (`Alt+Slash`). Pressing only modifiers keeps the
+ * recording live; blurring without a main key cancels back to the stored value.
+ */
+function KeyRecorderField(props: {
+  t: (key: SuggestPromptSettingsLocaleKey) => string
+  id: string
+  label: string
+  hint: string
+  state: SuggestPromptCardState
+  onEdit: (text: string) => void
+  onReset: () => void
+}) {
+  const { t, id, label, hint, state, onEdit, onReset } = props
+  const value = state.acceptKey
+  const disabled = !state.writable
+  // '' while armed-and-idle defers to the stored value for display.
+  const [armed, setArmed] = useState(false)
+  const [pending, setPending] = useState('')
+  return (
+    <div className="dsh-sug-field">
+      <div className="dsh-sug-head">
+        <label className="dsh-sug-label" htmlFor={id}>{label}</label>
+        {value.overridden
+          ? (
+            <span className="dsh-sug-badges">
+              <span className="dsh-sug-badge">{t('overridden')}</span>
+              <button type="button" className="dsh-sug-reset" disabled={disabled} onClick={onReset}>
+                {t('reset')}
+              </button>
+            </span>
+          )
+          : null}
+      </div>
+      <input
+        id={id}
+        className="dsh-sug-input"
+        type="text"
+        value={armed ? pending : value.text}
+        readOnly
+        placeholder={armed ? t('pressKeys') : undefined}
+        disabled={disabled}
+        onFocus={() => { setPending(''); setArmed(true) }}
+        onBlur={() => { setArmed(false); setPending('') }}
+        onKeyDown={(event) => {
+          event.preventDefault()
+          const spec = encodeKey(event.code, { alt: event.altKey, ctrl: event.ctrlKey, meta: event.metaKey, shift: event.shiftKey })
+          if (spec === undefined) {
+            // A pure modifier key: show the held modifiers so far and keep recording.
+            setPending(modifierSpec(event.altKey, event.ctrlKey, event.metaKey, event.shiftKey))
+            return
+          }
+          onEdit(spec)
+          setArmed(false)
+          setPending('')
+        }}
+      />
+      <p className="dsh-sug-hint">{hint}</p>
+    </div>
+  )
+}
+
+/** The canonical modifier-prefix string (`Alt+Ctrl`, empty when none held). */
+function modifierSpec(alt: boolean, ctrl: boolean, meta: boolean, shift: boolean): string {
+  const parts: string[] = []
+  if (alt) parts.push('Alt')
+  if (ctrl) parts.push('Ctrl')
+  if (meta) parts.push('Meta')
+  if (shift) parts.push('Shift')
+  return parts.join('+')
 }
 
 /**
@@ -341,6 +416,15 @@ export function SettingsCard(props: SettingsCardProps) {
                   else props.edit('model', text)
                 }}
                 onReset={() => { props.resetField('model') }}
+              />
+              <KeyRecorderField
+                t={t}
+                id="suggest-prompt-settings-accept-key"
+                label={t('acceptKey')}
+                hint={t('acceptKeyHint')}
+                state={state}
+                onEdit={(text) => { props.edit('acceptKey', text) }}
+                onReset={() => { props.resetField('acceptKey') }}
               />
               <div className="dsh-sug-footer">
                 {state.failed ? <p className="dsh-sug-failed">{t('saveFailed')}</p> : null}

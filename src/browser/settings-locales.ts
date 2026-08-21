@@ -11,6 +11,9 @@ export type SuggestPromptSettingsLocaleKey =
   | 'providerHint'
   | 'model'
   | 'modelHint'
+  | 'acceptKey'
+  | 'acceptKeyHint'
+  | 'pressKeys'
   | 'followRoute'
   | 'overridden'
   | 'reset'
@@ -37,6 +40,9 @@ export const en: Record<SuggestPromptSettingsLocaleKey, string> = {
   providerHint: 'Registered pi-ai provider; choose "follow session route" to use the session model.',
   model: 'Model',
   modelHint: 'A model of the selected provider; choose "follow session route" to use the session model.',
+  acceptKey: 'Accept shortcut',
+  acceptKeyHint: 'Press the key (or key combo) you want; focus the field first.',
+  pressKeys: 'Press keys…',
   followRoute: 'Follow session route',
   overridden: 'overridden',
   reset: 'Reset',
@@ -58,6 +64,9 @@ export const zh: Record<SuggestPromptSettingsLocaleKey, string> = {
   providerHint: '已注册的 pi-ai provider；选择"跟随会话路由"则使用会话模型。',
   model: 'Model',
   modelHint: '所选 provider 的模型；选择"跟随会话路由"则使用会话模型。',
+  acceptKey: '接受快捷键',
+  acceptKeyHint: '先点击该输入框获得焦点，然后按下你想用的按键（或组合键）。',
+  pressKeys: '请按键…',
   followRoute: '跟随会话路由',
   overridden: '已覆盖',
   reset: '重置',

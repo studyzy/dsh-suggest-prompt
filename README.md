@@ -27,7 +27,7 @@
 - **安全**：转录在发送前脱敏（密钥形状被掩蔽）；输出净化（控制序列、围栏、引号剥离、单行化）并做语义过滤（元文本、评价套话、助手口吻等被当作「无建议」丢弃）。
 - **无建议是常态**：模型回复为空或不合格时静默跳过，不报错、不写事件、不打扰。
 - **免调用重显**：删回空草稿会重新显示已持久化的建议，不再发新的模型请求。
-- **快捷键可配**：采纳快捷键通过 `acceptKey` 配置，默认 `Tab`。
+- **快捷键可配**：采纳快捷键默认 `Tab`，可在「建议提示词」设置卡片里按实际按键录制（如 `Alt+Slash`、`Ctrl+Enter`）。
 
 ## 效果预览
 
@@ -87,15 +87,16 @@ dsh plugin --profile web add @studyzy/dsh-suggest-prompt
 「设置 → 插件」会出现「建议提示词」卡片。这是**日常配置建议模型的主入口**，无需手动改配置文件：
 
 - **Provider / Model**：从已安装的 provider 目录（内置 `DeepSeek` 与 pi-ai 各 provider）中选择建议生成使用的路由；选择「跟随会话路由」则不覆盖，继承主请求路由。
+- **Accept shortcut**：点击输入框获得焦点后，直接按下想用的按键或组合键，按键即录制显示（先按 `Alt` 再按 `Slash` → `Alt+Slash`，`Ctrl+Alt+X` 显示为三个键），无需手动打字；保存后写入 `~/.dsh/settings.yaml`。
 - 编辑是暂存式的（带「未保存」标记与「放弃 / 保存」按钮），保存会由界面写入 `~/.dsh/settings.yaml` 的 `suggest-prompt` 小节；**保存后下一个完成回合生效**，无需重启。
 - 下拉只会列出目录中显式声明的模型；某 provider 未声明模型列表时，模型字段退化为自由文本输入。
-- 依赖 `dsh-settings` 的设置能力：没有挂载设置服务的组装（如 headless）不显示此卡片，此时仍可在补丁层配置 `provider` / `model`。
+- 依赖 `dsh-settings` 的设置能力：没有挂载设置服务的组装（如 headless）不显示此卡片，此时仍可在补丁层配置 `provider` / `model` / `acceptKey`。
 
 ![建议提示词设置卡片](assets/config.png)
 
 ### 补丁层字段（安装即带默认，可覆盖）
 
-以下字段由 bundle 自带的 `cordis.patch.yml` 提供默认值，**通常无需改动**；需要自定义时，在 profile 补丁层（`~/.dsh/profiles/web/cordis.patch.yml`）用 `- insert:` 覆盖同名 entry 的 `config`。除 `provider` / `model`（可在界面配置）外，这些字段**不在** WebUI 设置卡片中：
+以下字段由 bundle 自带的 `cordis.patch.yml` 提供默认值，**通常无需改动**；需要自定义时，在 profile 补丁层（`~/.dsh/profiles/web/cordis.patch.yml`）用 `- insert:` 覆盖同名 entry 的 `config`。`provider` / `model` / `acceptKey` 可在 WebUI 设置卡片中配置；其余字段**不在** WebUI 设置卡片中：
 
 | 字段 | 含义 | 默认值 |
 |---|---|---|
@@ -106,7 +107,7 @@ dsh plugin --profile web add @studyzy/dsh-suggest-prompt
 | `maxTranscriptChars` | 转录字符预算 | `12000` |
 | `maxSuggestionChars` | 建议的可见字符上限 | `240` |
 | `provider` / `model` | 各自独立覆盖主请求路由的对应字段；省略的字段自动继承主请求路由 | 继承（也可经界面配置） |
-| `acceptKey` | 采纳建议的输入框快捷键 | `Tab`（可写 `Alt+Slash`、`Ctrl+Enter` 等） |
+| `acceptKey` | 采纳建议的输入框快捷键 | `Tab`（界面可录制为 `Alt+Slash`、`Ctrl+Enter` 等） |
 
 > **`maxOutputTokens` 提示**：建议生成默认关闭思考（`reasoningEffort: off`），推理不消耗输出预算；但对无法关闭思考的模型（如部分 pi-ai 路由）会降级重试，此时思考仍会消耗预算——`maxOutputTokens` 偏小时，流会在输出建议文本之前就以 `max-tokens` 结束。这类模型请留足预算（例如 `512`）。
 
@@ -188,7 +189,7 @@ An automatic "next line" companion: after the AI answers, it predicts what you'd
 - **Safe**: transcripts are secret-redacted before framing; output is sanitized (control sequences, fences, quotes stripped, single line) and semantically filtered (meta-text, evaluative filler, assistant-voice phrasing are dropped as "no suggestion").
 - **Silent no-suggestion**: an empty or rejectable model reply is skipped quietly — no error, no event, no noise.
 - **Re-arm without a call**: deleting back to an empty draft re-shows the persisted suggestion with no new model request.
-- **Configurable shortcut**: the adopt shortcut is set via `acceptKey`, default `Tab`.
+- **Configurable shortcut**: the adopt shortcut is set via `acceptKey` (default `Tab`) and can be recorded from the "建议提示词" settings card (e.g. `Alt+Slash`, `Ctrl+Enter`).
 
 ## Preview
 
@@ -248,15 +249,16 @@ Configuration is split in two: the **day-to-day route is set in the UI**, and th
 A "建议提示词" card appears under Settings → Plugins. This is the **primary entry point** for choosing the suggestion route — no manual config-file edits:
 
 - **Provider / Model**: pick the route the auxiliary call uses from the installed provider catalog (built-in DeepSeek + pi-ai routes); choosing "Follow session route" keeps the main request route.
+- **Accept shortcut**: focus the field, then press the key or key combo you want — the pressed keys are recorded and shown (press `Alt` then `Slash` → `Alt+Slash`; a three-key combo like `Ctrl+Alt+X` displays as three keys), no typing needed.
 - Edits are staged (with an "Unsaved" marker and Discard / Save buttons); saving writes the `suggest-prompt` section of `~/.dsh/settings.yaml` for you, and **takes effect on the next completed turn** — no restart needed.
 - The dropdowns list only explicitly declared models; a provider without a declared model list degrades the model field to free-text input.
-- This rides the `dsh-settings` capability: assemblies without a settings service (e.g. headless) do not show the card and keep using `provider` / `model` in the patch layer.
+- This rides the `dsh-settings` capability: assemblies without a settings service (e.g. headless) do not show the card and keep using `provider` / `model` / `acceptKey` in the patch layer.
 
 ![Suggestion prompt settings card](assets/config.png)
 
 ### Patch-layer fields (defaults ship with the bundle, overridable)
 
-The following are provided with defaults by the bundle's own `cordis.patch.yml` and **normally need no changes**; to customize, override the same entry's `config` via `- insert:` in your profile patch layer (`~/.dsh/profiles/web/cordis.patch.yml`). Except for `provider` / `model` (editable in the UI), these are **not** in the WebUI settings card:
+The following are provided with defaults by the bundle's own `cordis.patch.yml` and **normally need no changes**; to customize, override the same entry's `config` via `- insert:` in your profile patch layer (`~/.dsh/profiles/web/cordis.patch.yml`). `provider` / `model` / `acceptKey` are editable from the WebUI card; the rest are **not** in the WebUI settings card:
 
 | Field | Meaning | Default |
 |---|---|---|
@@ -267,7 +269,7 @@ The following are provided with defaults by the bundle's own `cordis.patch.yml` 
 | `maxTranscriptChars` | Transcript character budget | `12000` |
 | `maxSuggestionChars` | Visible-character cap for the suggestion | `240` |
 | `provider` / `model` | Each independently overrides the matching member of the main request route; omitted members inherit the main route | inherited (also editable from the WebUI) |
-| `acceptKey` | Composer shortcut that adopts a displayed suggestion | `Tab` (`Alt+Slash`, `Ctrl+Enter`, ...) |
+| `acceptKey` | Composer shortcut that adopts a displayed suggestion | `Tab` (recordable in the UI as `Alt+Slash`, `Ctrl+Enter`, ...) |
 
 > **On `maxOutputTokens`**: suggestion generation disables thinking by default (`reasoningEffort: off`), so reasoning does not consume the output budget; but a model that cannot turn thinking off (some pi-ai routes) falls back to a retry where thinking still spends budget — a small `maxOutputTokens` then ends the stream with `max-tokens` before any suggestion text is produced. Leave a generous budget (e.g. `512`) for such models.
 

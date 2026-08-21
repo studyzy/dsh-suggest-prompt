@@ -5,7 +5,7 @@
  * modifiers, aliases, single letters/digits, and malformed specs.
  */
 import { describe, expect, it } from 'vitest'
-import { parseAcceptKey } from '../src/browser/accept-key.ts'
+import { parseAcceptKey, encodeKey } from '../src/browser/accept-key.ts'
 
 function press(init: KeyboardEventInit): KeyboardEvent {
   return new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })
@@ -57,5 +57,40 @@ describe('parseAcceptKey', () => {
     expect(parseAcceptKey('Tab+Enter')).toBeUndefined()
     expect(parseAcceptKey('Bogus')).toBeUndefined()
     expect(parseAcceptKey('Alt+Bogus')).toBeUndefined()
+  })
+})
+
+describe('encodeKey', () => {
+  it('encodes a bare key with no modifiers', () => {
+    expect(encodeKey('Tab')).toBe('Tab')
+    expect(encodeKey('Enter')).toBe('Enter')
+    expect(encodeKey('Slash')).toBe('Slash')
+  })
+
+  it('encodes a single letter, digit, or function key', () => {
+    expect(encodeKey('KeyT')).toBe('T')
+    expect(encodeKey('Digit5')).toBe('5')
+    expect(encodeKey('F5')).toBe('F5')
+  })
+
+  it('encodes modifier combos of two and three keys', () => {
+    expect(encodeKey('Slash', { alt: true })).toBe('Alt+Slash')
+    expect(encodeKey('Enter', { ctrl: true })).toBe('Ctrl+Enter')
+    expect(encodeKey('KeyX', { ctrl: true, alt: true })).toBe('Alt+Ctrl+X')
+  })
+
+  it('returns undefined for a pure modifier key', () => {
+    expect(encodeKey('AltLeft')).toBeUndefined()
+    expect(encodeKey('ControlLeft')).toBeUndefined()
+    expect(encodeKey('ShiftLeft')).toBeUndefined()
+    expect(encodeKey('MetaRight')).toBeUndefined()
+  })
+
+  it('round-trips through parseAcceptKey', () => {
+    const specs = ['Tab', 'Alt+Slash', 'Ctrl+Enter', 'Ctrl+Alt+X', 'Shift+F5', 'Meta+T', '5', 'Space']
+    for (const spec of specs) {
+      expect(parseAcceptKey(spec)).toBeDefined()
+    }
+    expect(parseAcceptKey(encodeKey('KeyT', { meta: true }))).toBeDefined()
   })
 })

@@ -84,14 +84,14 @@ function makeScope<T>(init: {
 
 /** Build a controller over scriptable scopes and the raw suggest scope user layer. */
 function buildController(over: {
-  value?: { provider?: string; model?: string }
-  base?: { provider?: string; model?: string }
-  user?: { provider?: string; model?: string }
+  value?: { provider?: string; model?: string; acceptKey?: string }
+  base?: { provider?: string; model?: string; acceptKey?: string }
+  user?: { provider?: string; model?: string; acceptKey?: string }
   providers?: Record<string, { models?: Array<{ id: string }> }>
   deepseekModels?: Array<{ id: string }>
   catalogStatus?: SettingsScopeSnapshot<{ providers?: Record<string, { models?: Array<{ id: string }> }> }>['status']
 } = {}) {
-  const scope = makeScope<{ provider?: string; model?: string }>({
+  const scope = makeScope<{ provider?: string; model?: string; acceptKey?: string }>({
     value: over.value,
     base: over.base,
     user: over.user,
@@ -154,6 +154,35 @@ describe('SuggestPromptCardController.save', () => {
     const state = await settledState(built)
     // Nothing was written, and nothing stays staged: an empty draft is a no-op edit.
     expect(state.dirty).toBe(false)
+  })
+})
+
+describe('SuggestPromptCardController acceptKey', () => {
+  it('stages and saves the configured accept shortcut', async () => {
+    const built = buildController({ value: {} })
+    built.controller.actions().edit('acceptKey', 'Alt+Slash')
+    built.controller.actions().save()
+    const state = await settledState(built)
+    expect(state.dirty).toBe(false)
+    expect(state.failed).toBe(false)
+    expect(state.acceptKey.text).toBe('Alt+Slash')
+  })
+
+  it('surfaces the stored acceptKey', () => {
+    const built = buildController({ value: { acceptKey: 'Ctrl+Enter' } })
+    const state = built.controller.inject().hooks.suggestPromptCard.getSnapshot()
+    expect(state.acceptKey.text).toBe('Ctrl+Enter')
+  })
+
+  it('reports failed when the acceptKey write is refused', async () => {
+    const built = buildController({ value: {} })
+    built.scope.fail.set = true
+    built.controller.actions().edit('acceptKey', 'Alt+Slash')
+    built.controller.actions().save()
+    const state = await settledState(built)
+    expect(state.failed).toBe(true)
+    expect(state.dirty).toBe(true)
+    expect(state.acceptKey.text).toBe('Alt+Slash')
   })
 })
 

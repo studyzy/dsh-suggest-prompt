@@ -57,7 +57,7 @@ const KEY_CODES: Readonly<Record<string, string>> = {
   '`': 'Backquote',
 }
 
-/** Map one key token to its `KeyboardEvent.code`; unknown tokens map to nothing. */
+/** One key token to a `KeyboardEvent.code`; unknown tokens map to nothing. */
 function keyCode(token: string): string | undefined {
   const lower = token.toLowerCase()
   const named = KEY_CODES[lower]
@@ -66,6 +66,52 @@ function keyCode(token: string): string | undefined {
   if (/^[0-9]$/.test(lower)) return `Digit${lower}`
   if (/^f(?:[1-9]|1[0-2])$/.test(lower)) return `F${lower.slice(1)}`
   return undefined
+}
+
+/**
+ * Encode a `KeyboardEvent`'s code and modifier state as a canonical accept
+ * shortcut spec such as `Tab`, `Alt+Slash`, or `Ctrl+Alt+X` — the inverse of
+ * {@link parseAcceptKey}, so the emitted spec always round-trips through it.
+ * @param code - the event's `code` (e.g. `KeyT`, `Slash`, `Tab`).
+ * @param modifiers - the event's modifier flags.
+ * @returns the canonical spec, or `undefined` when `code` names a pure modifier
+ * key (an event with no main key cannot encode a shortcut).
+ */
+export function encodeKey(
+  code: string,
+  modifiers: { alt?: boolean; ctrl?: boolean; meta?: boolean; shift?: boolean } = {},
+): string | undefined {
+  const parts: string[] = []
+  if (modifiers.alt) parts.push('Alt')
+  if (modifiers.ctrl) parts.push('Ctrl')
+  if (modifiers.meta) parts.push('Meta')
+  if (modifiers.shift) parts.push('Shift')
+  // A pure modifier key carries no main key, so it cannot form a shortcut.
+  if (KEY_MODIFIER_CODES.has(code)) return undefined
+  const main = encodeMainKey(code)
+  if (main === undefined) return undefined
+  parts.push(main)
+  return parts.join('+')
+}
+
+/** Codes of the pure modifier keys (no shortcut can name one as its main key). */
+const KEY_MODIFIER_CODES: ReadonlySet<string> = new Set([
+  'AltLeft', 'AltRight',
+  'ControlLeft', 'ControlRight',
+  'MetaLeft', 'MetaRight',
+  'ShiftLeft', 'ShiftRight',
+])
+
+/** Map a main key `code` to its canonical accept-spec token. */
+function encodeMainKey(code: string): string | undefined {
+  // Inverse of keyCode: KeyX -> single letter, DigitN -> single digit.
+  const keyMatch = /^Key([A-Z])$/.exec(code)
+  if (keyMatch !== null) return keyMatch[1]
+  const digitMatch = /^Digit([0-9])$/.exec(code)
+  if (digitMatch !== null) return digitMatch[1]
+  // The named codes (Tab, Slash, Enter, F5, ...) round-trip by their own name.
+  if (/^F(?:[1-9]|1[0-2])$/.test(code)) return code
+  return code
 }
 
 /**

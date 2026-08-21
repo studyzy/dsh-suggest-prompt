@@ -20,12 +20,17 @@ import { createSnapshotStore, type SettingsScope, type SnapshotStore } from '@de
  */
 export const SUGGEST_PROMPT_NS = 'suggest-prompt'
 
+/** The suggest-prompt section's editable fields (route pair plus the accept shortcut). */
+export type SuggestPromptEditField = 'provider' | 'model' | 'acceptKey'
+
 /** Route fields the card edits — the suggest-prompt section's optional pair. */
 export interface SuggestPromptSettings {
   /** Provider the auxiliary call routes through; absent follows the session route. */
   provider?: string
   /** Full catalog model id; absent follows the session route. */
   model?: string
+  /** Composer shortcut that accepts a suggestion into the draft (default Tab). */
+  acceptKey?: string
 }
 
 /** The `llm-pi-ai` section, narrowed to the route dropdown catalog. */
@@ -80,6 +85,8 @@ export interface SuggestPromptCardState {
   provider: RouteFieldState
   /** The model field. */
   model: RouteFieldState
+  /** The accept-key shortcut field. */
+  acceptKey: RouteFieldState
   /** Provider names from the pi-ai catalog plus the built-in DeepSeek route. */
   providerOptions: RouteOption[]
   /** Model ids of the effective provider, plus the current value when absent. */
@@ -90,10 +97,10 @@ export interface SuggestPromptCardState {
 
 /** The write actions the card's slot entry injects. */
 export interface SuggestPromptCardActions {
-  /** Stage draft text for one route field. */
-  edit(field: 'provider' | 'model', text: string): void
+  /** Stage draft text for one field. */
+  edit(field: SuggestPromptEditField, text: string): void
   /** Stage a clear, so saving lets the field re-inherit the composition layer. */
-  resetField(field: 'provider' | 'model'): void
+  resetField(field: SuggestPromptEditField): void
   /** Write every staged edit, then re-seed from what the host accepted. */
   save(): void
   /** Drop every staged edit. */
@@ -116,7 +123,7 @@ interface StagedEdit {
 
 /** Bridges the `suggest-prompt` scope onto the card's staged form. */
 export class SuggestPromptCardController {
-  private readonly staged = new Map<'provider' | 'model', StagedEdit>()
+  private readonly staged = new Map<SuggestPromptEditField, StagedEdit>()
   private readonly store: SnapshotStore<SuggestPromptCardState>
   private readonly unsubscribers: Array<() => void>
   private saving = false
@@ -191,6 +198,7 @@ export class SuggestPromptCardController {
       failed: this.failed,
       provider: this.field('provider', section.provider),
       model,
+      acceptKey: this.field('acceptKey', section.acceptKey),
       providerOptions,
       // Keep the current value selectable even when the catalog dropped it.
       modelOptions: catalogModels.length > 0 && model.text !== '' && !catalogModels.some(o => o.value === model.text)
@@ -201,7 +209,7 @@ export class SuggestPromptCardController {
   }
 
   /** One control's draft state: staged text, override presence, and validity. */
-  private field(field: 'provider' | 'model', value: unknown): RouteFieldState {
+  private field(field: SuggestPromptEditField, value: unknown): RouteFieldState {
     const staged = this.staged.get(field)
     if (staged === undefined) {
       return {
@@ -255,19 +263,19 @@ export class SuggestPromptCardController {
   }
 
   /** The composition-layer value one field reverts to once cleared. */
-  private baseValue(field: 'provider' | 'model'): string {
+  private baseValue(field: SuggestPromptEditField): string {
     const base = this.scope.getSnapshot().base as Partial<SuggestPromptSettings> | undefined
     const value = base?.[field]
     return typeof value === 'string' ? value : ''
   }
 
   /** Whether the user document layer carries this field (marks it overridden). */
-  private stored(field: 'provider' | 'model'): boolean {
+  private stored(field: SuggestPromptEditField): boolean {
     const user = this.scope.getSnapshot().user as Record<string, unknown> | undefined
     return user !== undefined && Object.hasOwn(user, field)
   }
 
-  private stage(field: 'provider' | 'model', edit: StagedEdit): void {
+  private stage(field: SuggestPromptEditField, edit: StagedEdit): void {
     this.staged.set(field, edit)
     this.failed = false
     // Switching provider changes which model that provider has: a staged model
@@ -317,7 +325,7 @@ export class SuggestPromptCardController {
     // instead of throwing — so the edit must be verified by reading the section
     // back after each write, not by relying on the promise to reject.
     const writes = [...this.staged].flatMap(([field, edit]): Array<{
-      field: 'provider' | 'model'
+      field: SuggestPromptEditField
       run: () => Promise<void>
       verify: () => boolean
     }> => {

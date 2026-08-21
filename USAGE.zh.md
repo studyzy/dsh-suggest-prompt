@@ -69,7 +69,7 @@ dsh plugin --profile web add https://github.com/studyzy/dsh-suggest-prompt.git
 - `Alt+Slash`（即 `Alt+/`）
 - `Ctrl+Enter`
 
-修改方式：bundle 自带默认 `acceptKey`；如需自定义，在 profile 补丁层（`~/.dsh/profiles/web/cordis.patch.yml`）用 `- insert:` 覆盖宿主插件的 `config.acceptKey`。注意 `acceptKey` 不在此插件的 WebUI 设置卡片中，只能在补丁层配置。
+修改方式：在 WebUI「设置 → 插件」的「建议提示词」卡片里有一个**接受快捷键**输入框。点击它获得焦点后，直接按下你想用的按键或组合键，按下的键就会显示在框里（先按 `Alt` 再按 `Slash` → 显示 `Alt+Slash`；组合如 `Ctrl+Alt+X` 会显示为三个键）。保存后写入 `~/.dsh/settings.yaml`，下一回合生效。若只想用回默认 `Tab`，点输入框旁的「重置」即可。也可在 profile 补丁层（`~/.dsh/profiles/web/cordis.patch.yml`）用 `- insert:` 覆盖宿主插件的 `config.acceptKey`。
 
 快捷键触发规则：
 
@@ -109,7 +109,7 @@ A：确认焦点确实在输入框 textarea 内（点击输入框再按），且
 
 ## 配置速查
 
-日常的**建议模型路由（provider / model）在 WebUI「设置 → 插件」的「建议提示词」卡片里配置**，保存后下一回合生效，无需改文件。以下字段由 bundle 自带默认值，**通常无需改动**；需要自定义时在 profile 补丁层用 `- insert:` 覆盖：
+日常的**建议模型路由（provider / model）**与**采纳快捷键（acceptKey）在 WebUI「设置 → 插件」的「建议提示词」卡片里配置**，保存后下一回合生效，无需改文件。以下资源上限字段由 bundle 自带默认值，**通常无需改动**；需要自定义时在 profile 补丁层用 `- insert:` 覆盖：
 
 | 字段 | 作用 | 默认 |
 |---|---|---|
@@ -119,7 +119,7 @@ A：确认焦点确实在输入框 textarea 内（点击输入框再按），且
 | `maxRecentTurns` | 发给建议模型的最近回合数 | `1`（只取最后一轮） |
 | `maxTranscriptChars` | 转录字符预算 | `12000` |
 | `maxSuggestionChars` | 建议可见字符上限 | `240` |
-| `acceptKey` | 采纳快捷键 | `Tab` |
+| `acceptKey` | 采纳快捷键（界面卡片可配置） | `Tab` |
 
 > `provider` / `model` 也能写在补丁层（设置的一方覆盖主请求路由对应字段，省略则继承），但通常用界面卡片即可。
 
