@@ -131,10 +131,13 @@ pnpm install
 pnpm build      # host tsc + client tsdown bundle
 pnpm test       # vitest
 pnpm typecheck
-pnpm test:e2e   # browser e2e against a real dsh web (needs DEEPSEEK_API_KEY)
+pnpm test:e2e       # browser e2e against an isolated dsh web (needs DEEPSEEK_API_KEY)
+pnpm test:e2e:local # local e2e against your real ~/.dsh (macOS: visible browser)
 ```
 
-> **E2E**：`pnpm test:e2e` 会起一个隔离 `$DSH_HOME`，用 `dsh plugin add` 安装本插件、`dsh web` 起服务，再用 Playwright 走 WebUI（配置 DeepSeek Key、把建议模型设为 DeepSeek Flash），输入一道数学题后断言输入框出现下一条建议的幽灵文字。需要环境变量 `DEEPSEEK_API_KEY`（无则跳过），并已全局安装 `dsh`；CI 里由 `DEEPSEEK_API_KEY` secret 注入。默认 `pnpm test` 不含 e2e。
+> **E2E（CI）**：`pnpm test:e2e` 会起一个隔离 `$DSH_HOME`，用 `dsh plugin add` 安装本插件、`dsh web` 起服务，再用 Playwright 走 WebUI（配置 DeepSeek Key、把建议模型设为 DeepSeek Flash），输入一道数学题后断言输入框出现下一条建议的幽灵文字。需要环境变量 `DEEPSEEK_API_KEY`（无则跳过）与全局 `dsh`；CI 里由 `DEEPSEEK_API_KEY` secret 注入。默认 `pnpm test` 不含 e2e。
+
+> **E2E（本地）**：`pnpm test:e2e:local` 复用你的真实 `~/.dsh`（不装 dsh、不跑 onboarding、不连工作区——本机已就绪），把**当前源码** link 进本地 web profile（`dsh plugin add`），起 `dsh web` 后用 Playwright 把「建议提示词」模型设为 DeepSeek Flash（ccr / `hai/DeepSeek-V4-Flash`），输入「出一道小学数学题给我」并断言幽灵建议出现。macOS 下**弹出可见浏览器**，Linux 下 headless。**会写真实 `~/.dsh`**（suggest-prompt 模型与 profile 依赖来源）——仅限本地开发验证，不入 CI。
 
 > **安装说明**：本仓库依赖已发布的 `@deepseek-ai/*` 包（deepseek-harness 工作区）。上游少数内部包（`@deepseek-ai/dsh-compact`、`@deepseek-ai/dsh-type-meta`、`@deepseek-ai/dsh-environment`）尚未出现在 npm registry，本仓库通过根 `package.json` 的 `pnpm.overrides` 把它们映射到本地 `stubs/` 空包，因此 `pnpm install` 可直接成功；等 registry 补齐后可移除 overrides 与 `stubs/`。完整测试矩阵在 harness monorepo 内运行；本仓库是单 bundle 包的权威源码副本。`pnpm build` 产出宿主 ESM（`lib/{index,invariant}.js`）、浏览器 bundle（`lib/client.js`）与 `lib/types/` 声明。
 
@@ -277,10 +280,13 @@ pnpm install
 pnpm build      # host tsc + client tsdown bundle
 pnpm test       # vitest
 pnpm typecheck
-pnpm test:e2e   # browser e2e against a real dsh web (needs DEEPSEEK_API_KEY)
+pnpm test:e2e       # browser e2e against an isolated dsh web (needs DEEPSEEK_API_KEY)
+pnpm test:e2e:local # local e2e against your real ~/.dsh (macOS: visible browser)
 ```
 
-> **E2E**: `pnpm test:e2e` boots an isolated `$DSH_HOME`, installs this bundle via `dsh plugin add`, starts `dsh web`, and drives the WebUI with Playwright (stores the DeepSeek key, sets the suggestion model to DeepSeek Flash, sends a math question, then asserts a ghost next-prompt suggestion appears). It requires `DEEPSEEK_API_KEY` (skipped otherwise) and a globally installed `dsh`; CI injects the key as a secret. The default `pnpm test` does not include e2e.
+> **E2E (CI)**: `pnpm test:e2e` boots an isolated `$DSH_HOME`, installs this bundle via `dsh plugin add`, starts `dsh web`, and drives the WebUI with Playwright (stores the DeepSeek key, sets the suggestion model to DeepSeek Flash, sends a math question, then asserts a ghost next-prompt suggestion appears). It requires `DEEPSEEK_API_KEY` (skipped otherwise) and a globally installed `dsh`; CI injects the key as a secret. The default `pnpm test` does not include e2e.
+
+> **E2E (local)**: `pnpm test:e2e:local` reuses your real `~/.dsh` (no dsh install, no onboarding, no workspace pick — your machine is already set up). It links the **current source** into the local web profile via `dsh plugin add`, starts `dsh web`, then drives Playwright to set the "建议提示词" suggestion model to DeepSeek Flash (ccr / `hai/DeepSeek-V4-Flash`), sends "出一道小学数学题给我", and asserts a ghost suggestion appears. On macOS the browser runs **headful** (watch it drive the UI); headless elsewhere. It **writes to your real `~/.dsh`** (the suggest-prompt model and the profile's dependency source) — local development only, not part of CI.
 
 > **Install caveat**: this repo depends on the published `@deepseek-ai/*` packages (the DeepSeek Harness workspace). A small number of internal packages referenced by the published `dsh-*` releases are not yet on the npm registry (`@deepseek-ai/dsh-compact`, `@deepseek-ai/dsh-type-meta`, `@deepseek-ai/dsh-environment`); the root `package.json` `pnpm.overrides` map them to the local empty `stubs/` packages, so `pnpm install` succeeds out of the box — remove the overrides and `stubs/` once the registry is complete. The full test matrix runs inside the harness monorepo; this repo is the source-of-record copy for the single bundle package. `pnpm build` emits the host ESM (`lib/{index,invariant}.js`), the browser bundle (`lib/client.js`), and the `lib/types/` declarations.
 

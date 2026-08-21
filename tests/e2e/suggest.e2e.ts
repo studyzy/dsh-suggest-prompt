@@ -19,93 +19,19 @@
  * Run: `pnpm test:e2e` (requires a real DEEPSEEK_API_KEY; skipped otherwise).
  * Excluded from the default `pnpm test` via vitest.e2e.config.ts.
  */
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
-import { createServer } from 'node:net'
-import { homedir, tmpdir } from 'node:os'
+import { spawn, type ChildProcess } from 'node:child_process'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import {
+  probeFreePort, resolvePnpmBinDir, saveFailureShot, setSuggestionModel, waitForReadyLine,
+} from './helpers.ts'
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url))
-
-/**
- * Directory on PATH whose `pnpm` dsh will resolve to. The vitest process is
- * itself launched by `pnpm run`, which rewrites PATH to pin THIS repo's
- * `packageManager` (pnpm@9) — and pnpm 9 rejects `pnpm add` to a workspace
- * root, so dsh's own `pnpm` would fail. Find a pnpm ≥10 (corepack cache on
- * macOS and Linux) and prepend its bin dir to the spawned env's PATH so dsh
- * installs cleanly. Returns '' to leave PATH alone when pnpm ≥10 is already
- * first.
- */
-function resolvePnpmBinDir(): string {
-  // If the current PATH's pnpm is already ≥10, nothing to do.
-  const probe = spawnSync('pnpm', ['--version'], { encoding: 'utf8' })
-  const current = (probe.stdout ?? '').trim()
-  if (probe.status === 0 && /^10\.|^1[1-9]\./.test(current)) return ''
-  // Otherwise search the corepack cache for the newest 10.x and prepend it.
-  const roots = [
-    join(homedir(), '.local/share/pnpm/.tools/pnpm'), // Linux / GitHub Actions
-    join(homedir(), 'Library/pnpm/.tools/pnpm'),      // macOS
-  ]
-  let best = ''
-  for (const root of roots) {
-    if (!existsSync(root)) continue
-    for (const version of readdirSync(root)) {
-      if (!/^10\./.test(version)) continue
-      const bin = join(root, version, 'bin')
-      if (existsSync(bin)) best = bin
-    }
-  }
-  // Fall back to npm's global install (e.g. `npm install -g pnpm@10`).
-  if (best === '') {
-    const npmRoot = spawnSync('npm', ['root', '-g'], { encoding: 'utf8' })
-    const npmGlobalNodeModules = (npmRoot.stdout ?? '').trim()
-    if (npmGlobalNodeModules !== '') {
-      const npmGlobalPnpmBin = join(npmGlobalNodeModules, 'pnpm', 'bin')
-      if (existsSync(npmGlobalPnpmBin)) best = npmGlobalPnpmBin
-    }
-  }
-  return best
-}
-
-/** OS-assigned free port, released before use (the spawned `dsh web` needs a concrete --port). */
-function probeFreePort(): Promise<number> {
-  return new Promise((resolvePort, reject) => {
-    const probe = createServer()
-    probe.once('error', reject)
-    probe.listen(0, '127.0.0.1', () => {
-      const address = probe.address()
-      if (address === null || typeof address === 'string') {
-        probe.close(() => { reject(new Error('port probe returned no address')) })
-        return
-      }
-      probe.close(() => { resolvePort(address.port) })
-    })
-  })
-}
-
-/** Resolve once `dsh web` prints its listening line (`dsh web: http://...`). */
-function waitForReadyLine(child: ChildProcess): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let out = ''
-    const timer = setTimeout(() => {
-      reject(new Error(`dsh web not ready in 90s; output:\n${out}`))
-    }, 90_000)
-    const onData = (chunk: Buffer): void => {
-      out += chunk.toString()
-      const match = /dsh web: (http:\/\/[^\s]+)/.exec(out)
-      if (match !== null) {
-        clearTimeout(timer)
-        resolve(match[1] ?? '')
-      }
-    }
-    child.stdout?.on('data', onData)
-    child.stderr?.on('data', onData)
-  })
-}
 
 /** Walk the first-run onboarding to store the DeepSeek credential through the UI. */
 async function configureKeyThroughOnboarding(page: Page, apiKey: string): Promise<void> {
@@ -146,29 +72,6 @@ async function connectWorkspace(page: Page, root: string, name = 'workspace'): P
   // composer (placeholder changes to the default "描述你想要构建的内容").
   await page.locator('textarea:enabled[placeholder="描述你想要构建的内容"]')
     .waitFor({ timeout: 15_000 })
-}
-
-/** Open Settings → Plugins, expand the suggestion card, set provider/model, save. */
-async function setSuggestionModel(page: Page): Promise<void> {
-  await page.getByRole('button', { name: '设置', exact: true }).click()
-  const settings = page.getByRole('dialog', { name: '设置' })
-  await settings.waitFor({ timeout: 10_000 })
-  await settings.getByRole('button', { name: '插件' }).click()
-
-  const card = settings.getByRole('button', { name: '展开: 建议提示词' })
-  await card.waitFor({ timeout: 10_000 })
-  await card.click()
-
-  const provider = settings.locator('#suggest-prompt-settings-provider')
-  await provider.waitFor({ timeout: 10_000 })
-  await provider.selectOption('deepseek-official')
-
-  const model = settings.locator('#suggest-prompt-settings-model')
-  await model.waitFor({ timeout: 10_000 })
-  await model.selectOption('deepseek-v4-flash')
-
-  await settings.getByRole('button', { name: '保存', exact: true }).click()
-  await settings.getByRole('dialog', { name: '设置' }).waitFor({ state: 'detached', timeout: 15_000 })
 }
 
 describe.skipIf(!process.env.DEEPSEEK_API_KEY)('suggest-prompt browser e2e (real dsh CLI)', () => {
@@ -254,7 +157,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('suggest-prompt browser e2e (real
     await input.waitFor({ timeout: 15_000 })
 
     // Route the suggestion model to DeepSeek Flash (deepseek-v4-flash).
-    await setSuggestionModel(page)
+    await setSuggestionModel(page, 'deepseek-official', 'deepseek-v4-flash')
 
     // Ask a math question. The base layer's default agent model is already
     // deepseek-official/deepseek-v4-flash, so the agent answers with real API.
@@ -271,30 +174,3 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('suggest-prompt browser e2e (real
     expect(pageErrors).toEqual([])
   }, 240_000)
 })
-
-/** Failure evidence goes to the gitignored .artifacts/. */
-async function saveFailureShot(page: Page, name: string): Promise<void> {
-  const { mkdirSync } = await import('node:fs')
-  const { fileURLToPath: f2p } = await import('node:url')
-  const dir = f2p(new URL('../../.artifacts', import.meta.url))
-  mkdirSync(dir, { recursive: true })
-  try {
-    await page.screenshot({ path: `${dir}/${name}.png`, fullPage: true })
-    const info = await page.evaluate(() => {
-      const describe = (el: Element): string => {
-        const role = el.getAttribute('role')
-        const aria = el.getAttribute('aria-label')
-        const text = (el.textContent ?? '').trim().slice(0, 80)
-        return `[${role ?? el.tagName.toLowerCase()} aria-label=${aria ?? ''}] "${text}"`
-      }
-      const dialogs = [...document.querySelectorAll('[role="dialog"],[role="menu"]')].map(describe)
-      const buttons = [...document.querySelectorAll('button[aria-haspopup]')].map(describe)
-      const textareas = [...document.querySelectorAll('textarea')].map(describe)
-      return { dialogs, buttons, textareas }
-    })
-    await import('node:fs/promises').then(fs =>
-      fs.writeFile(`${dir}/${name}.json`, JSON.stringify(info, null, 2)))
-  } catch {
-    // Best-effort evidence: a dead page at failure time must not mask the real assertion error.
-  }
-}

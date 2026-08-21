@@ -58,7 +58,8 @@
     "build": "tsc -p tsconfig.json && tsdown",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:e2e": "vitest run -c vitest.e2e.config.ts"
+    "test:e2e": "vitest run -c vitest.e2e.config.ts tests/e2e/suggest.e2e.ts",
+    "test:e2e:local": "vitest run -c vitest.e2e.config.ts tests/e2e/suggest-local.e2e.ts"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
