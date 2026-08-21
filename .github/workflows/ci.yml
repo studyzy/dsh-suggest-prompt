@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      # --ignore-scripts: the root `prepare` script runs `pnpm build` on
+      # install; we build explicitly below so CI can separate install from
+      # the build/typecheck/test gates.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+  # Browser e2e against a REAL `dsh web` (isolated $DSH_HOME): installs the
+  # bundle via `dsh plugin add`, drives the WebUI with Playwright, and checks
+  # that a ghost next-prompt suggestion appears after a real model round.
+  # Needs a DEEPSEEK_API_KEY secret on the repository.
+  e2e:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          # pnpm 10: dsh manages profile plugins with pnpm and pnpm 9 rejects
+          # adding to a workspace root, so the e2e lane must expose pnpm ≥10.
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Build the plugin
+        run: pnpm build
+
+      # The latest dsh (rc.8 on the `next` tag) ships the web app dist and
+      # manages profile plugins with its own pnpm.
+      - name: Install latest dsh
+        run: npm i -g @deepseek-ai/dsh@next
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run browser e2e
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: pnpm test:e2e

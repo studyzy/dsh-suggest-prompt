@@ -1,0 +1,29 @@
+name: Feature request
+description: Suggest an enhancement to dsh-suggest-prompt
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement. Describe the problem you're
+        solving rather than only the mechanism, so the design can be shaped
+        around the real need.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is the limitation or gap you're running into?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: What should happen instead? Include how it would affect the ghost-text UX, config surface, or bundle.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workarounds or alternative designs you've thought about.

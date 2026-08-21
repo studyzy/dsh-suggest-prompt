@@ -1,0 +1,17 @@
+# Editor-side declaration of the repo's text conventions. Pairs with
+# .gitattributes: that file pins what git produces (LF checkouts), this one
+# pins what editors write to disk — the one path git's filters cannot reach.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{ts,tsx,js,jsx,mjs,cjs,json,md,yaml,yml}]
+indent_style = space
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false

@@ -1,0 +1,24 @@
+# The repo's canonical text form is LF, enforced at checkout too: no smudge
+# boundary between working tree and repo, so builds, diffs, and tooling see
+# one form on every host.
+* text=auto eol=lf
+
+*.ts text
+*.tsx text
+*.js text
+*.jsx text
+*.json text
+*.md text
+*.yml text
+*.yaml text
+*.svg text
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.map binary

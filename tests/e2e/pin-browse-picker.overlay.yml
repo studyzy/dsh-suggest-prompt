@@ -1,0 +1,11 @@
+# Loader overlay for the browser e2e (`dsh web --patch`): pin the in-browser
+# directory picker. The shipped row is `-auto`, which resolves to the native
+# OS chooser on a loopback bind — an interaction a Playwright page cannot
+# drive. The disable+insert pair mirrors apps/web/tests/scaffold.ts.
+- id: directory-picker
+  disabled: true
+- insert:
+    - id: directory-picker-browse
+      name: '@deepseek-ai/dsh-host-directory-picker-browse'
+    - id: ui-directory-picker-browse
+      name: '@deepseek-ai/dsh-client-ui-directory-picker-browse'

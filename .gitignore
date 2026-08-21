@@ -3,3 +3,6 @@ lib/
 *.tsbuildinfo
 .coverage/
 .idea/
+test-results/
+playwright-report/
+.artifacts/

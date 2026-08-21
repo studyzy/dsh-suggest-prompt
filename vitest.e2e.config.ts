@@ -2,9 +2,13 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 
 /**
- * Map the single package's outlets to their source when the tests import them
- * by name, so tests run against source without a prior build. More specific
- * outlets must be listed before the bare package name (Vite prefix-matches).
+ * E2E lane: spawns a REAL `dsh web` against an isolated $DSH_HOME and drives
+ * the browser with Playwright. The default vitest lane (`vitest.config.ts`)
+ * excludes `tests/e2e/**`; run this lane explicitly with `pnpm test:e2e`.
+ *
+ * The aliases mirror the unit config so any package-outlet imports resolve to
+ * source, and the published client deps stay inlined so their CSS modules
+ * load under jsdom-free E2E too.
  */
 export default defineConfig({
   resolve: {
@@ -16,12 +20,9 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['tests/**/*.spec.ts', 'tests/**/*.spec.tsx'],
-    exclude: ['**/provider.e2e.ts', '**/tests/e2e/**'],
-    // The published dsh-client-* packages ship CSS modules (e.g. primitives'
-    // StateDot.module.css); jsdom cannot import them as raw Node files. Inline
-    // the published client dependencies so Vitest's pipeline (CSS modules as
-    // identity class maps) applies to their bundled output too.
+    include: ['tests/e2e/**/*.e2e.ts'],
+    testTimeout: 300_000,
+    hookTimeout: 240_000,
     css: true,
     server: {
       deps: {

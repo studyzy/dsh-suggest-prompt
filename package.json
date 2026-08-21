@@ -54,9 +54,11 @@
   },
   "license": "MIT",
   "scripts": {
+    "prepare": "pnpm build",
     "build": "tsc -p tsconfig.json && tsdown",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "vitest run -c vitest.e2e.config.ts"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
@@ -98,11 +100,13 @@
     "@deepseek-ai/dsh-session-projection": "^0.1.0-rc.8",
     "@deepseek-ai/dsh-settings": "^0.1.0-rc.8",
     "@deepseek-ai/dsh-timeout": "^0.1.0-rc.8",
+    "@playwright/test": "1.62.1",
     "@testing-library/react": "^16.1.0",
     "@types/node": "^22.10.0",
     "@types/react": "~18.3.1",
     "jsdom": "^25.0.0",
     "lightningcss": "^1.32.0",
+    "playwright": "1.62.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "tsdown": "^0.22.2",

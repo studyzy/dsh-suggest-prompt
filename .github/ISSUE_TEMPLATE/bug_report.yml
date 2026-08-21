@@ -1,0 +1,48 @@
+name: Bug report
+description: Report a problem with dsh-suggest-prompt
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Before filing, please
+        search existing issues for a duplicate.
+  - type: input
+    id: version
+    attributes:
+      label: Plugin version
+      description: Version or git commit of dsh-suggest-prompt you're running.
+    validations:
+      required: true
+  - type: input
+    id: dsh-version
+    attributes:
+      label: dsh / harness version
+      description: e.g. the deepseek-harness commit or npm version your deployment is built from.
+    validations:
+      required: true
+  - type: dropdown
+    id: node
+    attributes:
+      label: Node.js version
+      options:
+        - "22"
+        - "24"
+        - other
+      default: 0
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the bug. Paste the ghost-text behavior or the absence of it, and any relevant dsh log lines mentioning `suggest-prompt`.
+      placeholder: "Steps to reproduce:\n1. ...\n2. ...\nExpected: ...\nActual: ..."
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant configuration
+      description: Optional. Your profile patch / settings for the suggestion route and caps (redact any secrets).
+      render: yaml

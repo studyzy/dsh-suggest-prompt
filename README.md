@@ -131,9 +131,14 @@ pnpm install
 pnpm build      # host tsc + client tsdown bundle
 pnpm test       # vitest
 pnpm typecheck
+pnpm test:e2e   # browser e2e against a real dsh web (needs DEEPSEEK_API_KEY)
 ```
 
-> **安装说明**：本仓库依赖已发布的 `@deepseek-ai/*` 包（deepseek-harness 工作区）。上游少数内部包（`@deepseek-ai/dsh-compact`、`@deepseek-ai/dsh-type-meta`、`@deepseek-ai/dsh-environment`）尚未出现在 npm registry，本仓库通过根 `package.json` 的 `pnpm.overrides` 把它们映射到本地 `stubs/` 空包，因此 `pnpm install` 可直接成功；等 registry 补齐后可移除 overrides 与 `stubs/`。完整测试矩阵在 harness monorepo 内运行；本仓库是单 bundle 包的权威源码副本。`pnpm build` 产出宿主 ESM（`lib/{index,invariant}.js`）与浏览器 bundle（`lib/client.js`），并生成 `lib/types/` 声明。
+> **E2E**：`pnpm test:e2e` 会起一个隔离 `$DSH_HOME`，用 `dsh plugin add` 安装本插件、`dsh web` 起服务，再用 Playwright 走 WebUI（配置 DeepSeek Key、把建议模型设为 DeepSeek Flash），输入一道数学题后断言输入框出现下一条建议的幽灵文字。需要环境变量 `DEEPSEEK_API_KEY`（无则跳过），并已全局安装 `dsh`；CI 里由 `DEEPSEEK_API_KEY` secret 注入。默认 `pnpm test` 不含 e2e。
+
+> **安装说明**：本仓库依赖已发布的 `@deepseek-ai/*` 包（deepseek-harness 工作区）。上游少数内部包（`@deepseek-ai/dsh-compact`、`@deepseek-ai/dsh-type-meta`、`@deepseek-ai/dsh-environment`）尚未出现在 npm registry，本仓库通过根 `package.json` 的 `pnpm.overrides` 把它们映射到本地 `stubs/` 空包，因此 `pnpm install` 可直接成功；等 registry 补齐后可移除 overrides 与 `stubs/`。完整测试矩阵在 harness monorepo 内运行；本仓库是单 bundle 包的权威源码副本。`pnpm build` 产出宿主 ESM（`lib/{index,invariant}.js`）、浏览器 bundle（`lib/client.js`）与 `lib/types/` 声明。
+
+> **`prepare` 脚本**：`package.json` 的 `prepare` 脚本会在 `pnpm install`（含 `dsh plugin add <git-url>` 的安装流程）时自动运行 `pnpm build` 现场构建 `lib/`，产物不入库。因此源码改动后无需手动构建即可被本地 dsh 加载；从 Git 安装也总能拿到完整产物（含类型声明）。
 
 ## 许可
 
@@ -272,9 +277,14 @@ pnpm install
 pnpm build      # host tsc + client tsdown bundle
 pnpm test       # vitest
 pnpm typecheck
+pnpm test:e2e   # browser e2e against a real dsh web (needs DEEPSEEK_API_KEY)
 ```
 
+> **E2E**: `pnpm test:e2e` boots an isolated `$DSH_HOME`, installs this bundle via `dsh plugin add`, starts `dsh web`, and drives the WebUI with Playwright (stores the DeepSeek key, sets the suggestion model to DeepSeek Flash, sends a math question, then asserts a ghost next-prompt suggestion appears). It requires `DEEPSEEK_API_KEY` (skipped otherwise) and a globally installed `dsh`; CI injects the key as a secret. The default `pnpm test` does not include e2e.
+
 > **Install caveat**: this repo depends on the published `@deepseek-ai/*` packages (the DeepSeek Harness workspace). A small number of internal packages referenced by the published `dsh-*` releases are not yet on the npm registry (`@deepseek-ai/dsh-compact`, `@deepseek-ai/dsh-type-meta`, `@deepseek-ai/dsh-environment`); the root `package.json` `pnpm.overrides` map them to the local empty `stubs/` packages, so `pnpm install` succeeds out of the box — remove the overrides and `stubs/` once the registry is complete. The full test matrix runs inside the harness monorepo; this repo is the source-of-record copy for the single bundle package. `pnpm build` emits the host ESM (`lib/{index,invariant}.js`), the browser bundle (`lib/client.js`), and the `lib/types/` declarations.
+
+> **The `prepare` script**: `package.json`'s `prepare` runs `pnpm build` on `pnpm install` (including `dsh plugin add <git-url>`), building `lib/` on the spot. The build output is never committed, so source edits take effect for a local dsh load without a manual build, and a Git install always receives a complete artifact set (types included).
 
 ## License
 
