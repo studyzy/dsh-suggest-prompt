@@ -81,6 +81,9 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('suggest-prompt browser e2e (real
   let browser: Browser
   let page: Page
   const pageErrors: string[] = []
+  // Browser console messages (esp. errors) — the frontend bundle's own voice
+  // when a React tree crashes (e.g. the settings card) without a host log.
+  const consoleErrors: string[] = []
   // The spawned `dsh web`'s own output (stdout+stderr). Captured so a failure
   // can print the host's internal logs — e.g. whether suggestion generation
   // failed or was silently skipped — which Playwright's assertion alone hides.
@@ -135,6 +138,9 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('suggest-prompt browser e2e (real
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale: 'zh-CN' })
     page.on('pageerror', error => pageErrors.push(String(error)))
+    page.on('console', message => {
+      if (message.type() === 'error') consoleErrors.push(`${message.type()}: ${message.text()}`)
+    })
     await page.goto(baseUrl, { waitUntil: 'load' })
   }, 180_000)
 
@@ -157,6 +163,12 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('suggest-prompt browser e2e (real
       // rendered. Truncate to the tail (suggestions happen at the very end).
       const hostLog = webLog.join('').split('\n').filter(Boolean)
       console.error(`--- dsh web log tail (${hostLog.length} lines) ---\n${hostLog.slice(-80).join('\n')}`)
+      // Frontend bundle errors: a crashed React tree (settings card, ghost
+      // overlay) leaves no host log and is the fastest way to spot a UI break.
+      console.error(`--- browser console errors (${consoleErrors.length}) ---`)
+      for (const line of consoleErrors) console.error(line)
+      console.error(`--- page errors (${pageErrors.length}) ---`)
+      for (const line of pageErrors) console.error(line)
     })
     const apiKey = process.env.DEEPSEEK_API_KEY as string
 

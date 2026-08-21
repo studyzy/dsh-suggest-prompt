@@ -108,3 +108,13 @@ jobs:
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: pnpm test:e2e
+
+      # Upload failure evidence (screenshot + page-state JSON from saveFailureShot)
+      # so a ghost-timeout failure can be diagnosed from the DOM, not guessed at.
+      - name: Upload e2e failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failure
+          path: .artifacts/**
+          if-no-files-found: ignore
