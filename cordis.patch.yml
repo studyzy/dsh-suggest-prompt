@@ -1,0 +1,15 @@
+# dsh-suggest-prompt bundle patch: mount the host suggestion plugin.
+# The browser half is discovered automatically via the package's
+# `dsh.client` declaration (exports["./client"]), so only the host entry is
+# inserted here.
+- insert:
+    - id: suggest-prompt
+      name: '@studyzy/dsh-suggest-prompt'
+      config:
+        maxInputBytes: 4096
+        maxOutputTokens: 512
+        timeoutMs: 60000
+        maxRecentTurns: 1
+        maxTranscriptChars: 12000
+        maxSuggestionChars: 240
+        acceptKey: Tab

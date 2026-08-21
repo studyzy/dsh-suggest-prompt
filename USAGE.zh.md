@@ -17,37 +17,27 @@
           └── 按 Tab → 变成真实输入，可编辑后发送
 ```
 
-## 安装（三步）
+## 安装（两步）
 
-### 第 1 步：把插件加入你的 dsh 部署
+### 第 1 步：从 GitHub 把插件加入你的 dsh 部署
 
-当前推荐从源码接入。把本仓库的两个包放进 harness 工作区（或用 `file:` 依赖引用），然后在 profile 补丁层挂两行，例如 `~/.dsh/profiles/web/cordis.patch.yml`：
+本插件是单个 bundle 包，一行命令即可安装：
 
-```yaml
-- id: suggest-prompt
-  name: '@studyzy/dsh-suggest-prompt'
-  config:
-    maxInputBytes: 4096
-    maxOutputTokens: 512
-    timeoutMs: 60000
-    maxRecentTurns: 1
-    maxTranscriptChars: 12000
-    maxSuggestionChars: 240
-    acceptKey: Tab
+```sh
+# 从 GitHub 安装（推荐）
+dsh plugin --profile web add git@github.com:studyzy/dsh-suggest-prompt.git
 
-- id: ui-suggest-prompt
-  name: '@studyzy/dsh-client-ui-suggest-prompt'
+# 或 HTTPS
+dsh plugin --profile web add https://github.com/studyzy/dsh-suggest-prompt.git
 ```
 
-> 若你的 dsh 环境已能解析 npm 上的 `@studyzy/*` 包，也可改用 `dsh plugin --profile web add @studyzy/dsh-suggest-prompt` 之类的方式安装。详见 [README.md](README.md) 的「安装」一节。
+装完它自动成为 profile 的一个 bundle 层（`dsh-base` → `dsh-web-app` → `@studyzy/dsh-suggest-prompt`），浏览器端与宿主插件都会生效，**无需手动改配置文件**。
 
-### 第 2 步：重启 web 服务并刷新页面
+> 本地源码开发用 `dsh plugin --profile web add /path/to/dsh-suggest-prompt`。安装、放行 git 构建、卸载详见 [README.md](README.md) 的「安装」一节。
 
-重启正在运行的 `dsh web` 服务，浏览器硬刷新页面，然后新建或重新打开一个会话。
+### 第 2 步：重启 web 服务并观察
 
-### 第 3 步：让 AI 答完一轮，观察输入框
-
-随便问一句。AI 回答完成后，输入框内部就会出现浅色幽灵文字（首次可能需要 10–30 秒生成，因为要走一次辅助模型）。
+重启正在运行的 `dsh web` 服务，浏览器硬刷新页面，新建或重新打开一个会话，随便问一句。AI 回答完成后，输入框内部就会出现浅色幽灵文字（首次可能需要 10–30 秒生成，因为要走一次辅助模型）。
 
 ## 日常使用
 
@@ -79,7 +69,7 @@
 - `Alt+Slash`（即 `Alt+/`）
 - `Ctrl+Enter`
 
-修改方式：在宿主插件配置里设置 `acceptKey`（见上面的 `cordis.patch.yml` 示例），随每条建议下发。
+修改方式：bundle 自带默认 `acceptKey`；如需自定义，在 profile 补丁层（`~/.dsh/profiles/web/cordis.patch.yml`）用 `- insert:` 覆盖宿主插件的 `config.acceptKey`。注意 `acceptKey` 不在此插件的 WebUI 设置卡片中，只能在补丁层配置。
 
 快捷键触发规则：
 
@@ -101,12 +91,12 @@
 
 **Q：为什么回答完了，输入框里什么都没有？**
 A：大概率是"本回合无建议"（模型认为下一步不明显或回复被过滤），属正常现象。若怀疑配置问题，请确认：
-- 两个插件都已在 profile 中挂载；
+- 插件 bundle 已安装（`dsh --dump-config --profile web` 应看到 `suggest-prompt` 行）；
 - 重启了 web 服务并硬刷新；
 - 辅助模型路由可正常访问（可看 dsh 日志里是否有 `suggest-prompt` 相关的 warn）。
 
 **Q：建议出现得太慢？**
-A：辅助模型每次回答完成后才发起，首次可能需要 10–30 秒。可在配置里把 `provider`/`model` 指向更快的模型，或降低 `maxOutputTokens`。
+A：辅助模型每次回答完成后才发起，首次可能需要 10–30 秒。可在 WebUI「设置 → 插件」的建议提示词卡片里把 `provider`/`model` 指向更快的模型，或在补丁层降低 `maxOutputTokens`。
 
 **Q：建议内容不对 / 太长 / 乱码？**
 A：插件已做脱敏、净化、语义过滤和长度截断（`maxSuggestionChars`）。仍不满意可调小 `maxSuggestionChars`，或换用推理能力更强的建议模型。
@@ -119,13 +109,18 @@ A：确认焦点确实在输入框 textarea 内（点击输入框再按），且
 
 ## 配置速查
 
+日常的**建议模型路由（provider / model）在 WebUI「设置 → 插件」的「建议提示词」卡片里配置**，保存后下一回合生效，无需改文件。以下字段由 bundle 自带默认值，**通常无需改动**；需要自定义时在 profile 补丁层用 `- insert:` 覆盖：
+
 | 字段 | 作用 | 默认 |
 |---|---|---|
-| `acceptKey` | 采纳快捷键 | `Tab` |
+| `maxInputBytes` | 最终框架化用户提示的最大字节数 | `4096` |
+| `maxOutputTokens` | 辅助请求输出 token 上限 | `512`（推理模型建议 ≥512） |
+| `timeoutMs` | 辅助请求超时（毫秒） | `60000` |
 | `maxRecentTurns` | 发给建议模型的最近回合数 | `1`（只取最后一轮） |
-| `maxSuggestionChars` | 建议可见字符上限 | 必填 |
-| `maxOutputTokens` | 辅助请求输出 token 上限 | 必填（推理模型建议 ≥512） |
-| `timeoutMs` | 辅助请求超时（毫秒） | 必填 |
-| `provider` / `model` | 建议模型路由；同时省略则继承主请求路由 | 继承 |
+| `maxTranscriptChars` | 转录字符预算 | `12000` |
+| `maxSuggestionChars` | 建议可见字符上限 | `240` |
+| `acceptKey` | 采纳快捷键 | `Tab` |
+
+> `provider` / `model` 也能写在补丁层（设置的一方覆盖主请求路由对应字段，省略则继承），但通常用界面卡片即可。
 
 完整字段与说明见 [README.md](README.md) 的「配置」一节。

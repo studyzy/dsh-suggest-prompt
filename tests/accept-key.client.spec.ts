@@ -5,7 +5,7 @@
  * modifiers, aliases, single letters/digits, and malformed specs.
  */
 import { describe, expect, it } from 'vitest'
-import { parseAcceptKey } from '../src/client/accept-key.ts'
+import { parseAcceptKey } from '../src/browser/accept-key.ts'
 
 function press(init: KeyboardEventInit): KeyboardEvent {
   return new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })

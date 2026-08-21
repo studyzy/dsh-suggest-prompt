@@ -23,6 +23,11 @@ import { SettingsCard } from './SettingsCard.tsx'
 import { SuggestPromptCardController, SUGGEST_PROMPT_NS } from './settings-controller.ts'
 import { en, zh } from './settings-locales.ts'
 
+// Re-export the shared pure types so the package's `./client` outlet keeps
+// exposing the `suggestPrompt` projection declaration to client consumers
+// (single-package: browser code lives in-package and reaches types directly).
+export type * from '../types.ts'
+
 export { GhostSuggestion } from './GhostSuggestion.tsx'
 export { SettingsCard } from './SettingsCard.tsx'
 export { SUGGEST_PROMPT_NS } from './settings-controller.ts'

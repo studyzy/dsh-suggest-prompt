@@ -4,18 +4,17 @@
 
 > 想快速上手？直接看 **[使用说明](USAGE.zh.md)**（面向终端用户的操作指南）。
 
-本仓库是这两个包的**权威源码**（source of record），由两个包构成：
+本仓库是**单个 bundle 包**（`@studyzy/dsh-suggest-prompt`）的权威源码，把宿主生成与浏览器渲染合并为一个可一键安装的 bundle：
 
 | 包 | 作用 |
 |---|---|
-| [`@studyzy/dsh-suggest-prompt`](packages/suggest-prompt) | 宿主插件：在 `turn/end`（reason=`completed`）时生成建议，发布 `suggestPrompt` 会话投影。 |
-| [`@studyzy/dsh-client-ui-suggest-prompt`](packages/ui-suggest-prompt) | 浏览器插件：读取投影，把建议渲染为输入框内部的浅色幽灵占位文字（`inputActions.setDraft`），按配置的快捷键填入草稿。 |
+| [`@studyzy/dsh-suggest-prompt`](.) | 宿主插件（`.`, `./invariant`, `./types`）：在 `turn/end`（reason=`completed`）时生成建议，发布 `suggestPrompt` 会话投影。浏览器插件（`./client`）：读取投影，渲染为输入框内部的浅色幽灵占位文字（`inputActions.setDraft`），按配置的快捷键填入草稿。 |
 
 ## 特性
 
 - **默认轻量**：不配置 `provider` / `model` 时继承主请求最近一次记录的路由，无需为建议单独选模型；需要时也可显式指定任意路由（例如本地 OpenAI 兼容网关）。
 - **免思考、快速便宜**：建议生成默认携带 `reasoningEffort: off`（DeepSeek 序列化为 `thinking: disabled`），不消耗推理预算；模型不支持该参数时自动去掉并重试一次。
-- **WebUI 设置卡片**：安装后在「设置 → 插件」中出现「建议提示词」卡片，可直接从已安装的 provider 目录选择建议生成使用的 provider / model（或跟随会话路由），保存后下一完成回合生效；也可手写 `~/.dsh/settings.yaml`。
+- **界面配置模型路由**：日常只需在 WebUI「设置 → 插件」的「建议提示词」卡片里选择建议生成的 provider / model（或跟随会话路由），保存后下一完成回合生效，无需手动改配置文件；`~/.dsh/settings.yaml` 由界面代写。
 - **只发最后一轮**：默认只把最后一轮的用户输入与 AI 最终回答发给建议模型（`maxRecentTurns` 默认为 `1`），中间的工具调用 / 推理过程一律不发送。
 - **有界调用**：字节 / 令牌 / 超时上限、转录长度预算、建议可见字符上限，全部可配置。
 - **安全**：转录在发送前脱敏（密钥形状被掩蔽）；输出净化（控制序列、围栏、引号剥离、单行化）并做语义过滤（元文本、评价套话、助手口吻等被当作「无建议」丢弃）。
@@ -30,41 +29,58 @@
 - Node.js `^22.19` 或 `>=24`、pnpm。
 - 一个基于 deepseek-harness 的 dsh 部署（web profile）。浏览器端需要 `conversation.input.overlay` 槽位与 `inputActions.setDraft`（deepseek-harness 的标准 web 输入机均已提供）。
 
-### 通过 npm 安装（发布后）
+### 从 GitHub 安装（默认方式，一行命令）
 
-> 注意：`@studyzy/dsh-suggest-prompt` 与 `@studyzy/dsh-client-ui-suggest-prompt` 的完整依赖链尚未全部发布到 npm（上游 `@deepseek-ai/dsh-compact`、`@deepseek-ai/dsh-environment` 等仍缺失）。等 registry 补齐后：
+本插件是一个**单包 bundle**：仓库根 `@studyzy/dsh-suggest-prompt` 声明了 `dsh.bundle`（自带 `cordis.patch.yml`），因此用 `dsh plugin add` 指向 GitHub 仓库即可安装，装完**自动成为 profile 的一个 bundle 层**，无需手动改配置文件。
 
 ```sh
-npm install @studyzy/dsh-suggest-prompt @studyzy/dsh-client-ui-suggest-prompt
+# 从 GitHub 安装（推荐）
+dsh plugin --profile web add git@github.com:studyzy/dsh-suggest-prompt.git
+
+# 或 HTTPS
+dsh plugin --profile web add https://github.com/studyzy/dsh-suggest-prompt.git
 ```
 
-然后在 profile 的 cordis.yml / 补丁层挂上两行（见下「配置」示例）。
+装完后重启正在运行的 `dsh web` 服务即可。安装后 profile 层叠顺序变为 `dsh-base` → `dsh-web-app` → `@studyzy/dsh-suggest-prompt`。
 
-### 从本仓库源码接入（当前方式）
+卸载：
 
-把这两个包放进 harness 工作区（或通过 `file:` 依赖引用本仓库），并在 profile 补丁层插入两行。例如 `~/.dsh/profiles/web/cordis.patch.yml`：
-
-```yaml
-- id: suggest-prompt
-  name: '@studyzy/dsh-suggest-prompt'
-  config:
-    maxInputBytes: 4096
-    maxOutputTokens: 512
-    timeoutMs: 60000
-    maxRecentTurns: 1
-    maxTranscriptChars: 12000
-    maxSuggestionChars: 240
-    provider: ccr
-    model: ttswitch/deepseek-v4-flash-ioa
-    acceptKey: Tab
-
-- id: ui-suggest-prompt
-  name: '@studyzy/dsh-client-ui-suggest-prompt'
+```sh
+dsh plugin --profile web remove @studyzy/dsh-suggest-prompt
 ```
 
-`provider` / `model` 可分别设置：设置的一方覆盖主请求路由的对应字段，省略的一方自动继承主请求最近一次记录的路由；两者都省略则完全跟随主请求路由。
+> **git 安装的 pnpm ≥10 提示**：git 托管的插件在安装时通过 `prepare` 脚本构建，pnpm ≥10 会拦截该脚本直到放行。若 `add` 报错，把 pnpm 打印的包键加进 `~/.dsh/profiles/web/pnpm-workspace.yaml` 的 `allowBuilds`，再重跑 `add`。
+
+### 本地源码安装（开发用）
+
+```sh
+dsh plugin --profile web add /path/to/dsh-suggest-prompt
+```
+
+### 通过 npm 安装（发布后）
+
+```sh
+dsh plugin --profile web add @studyzy/dsh-suggest-prompt
+```
+
+> 说明：无论哪种来源，装完都是同一个 bundle 层。日常建议模型的 provider / model 通过 WebUI 设置卡片配置（见下「配置」），不需要在安装时手动指定。
 
 ## 配置
+
+配置分两层：**日常的路由配置走界面**，**一次性的资源上限在 bundle 自带的补丁层提供**（可在 profile 补丁层覆盖）。
+
+### 通过 WebUI 界面配置建议模型（日常）
+
+「设置 → 插件」会出现「建议提示词」卡片。这是**日常配置建议模型的主入口**，无需手动改配置文件：
+
+- **Provider / Model**：从已安装的 provider 目录（内置 `DeepSeek` 与 pi-ai 各 provider）中选择建议生成使用的路由；选择「跟随会话路由」则不覆盖，继承主请求路由。
+- 编辑是暂存式的（带「未保存」标记与「放弃 / 保存」按钮），保存会由界面写入 `~/.dsh/settings.yaml` 的 `suggest-prompt` 小节；**保存后下一个完成回合生效**，无需重启。
+- 下拉只会列出目录中显式声明的模型；某 provider 未声明模型列表时，模型字段退化为自由文本输入。
+- 依赖 `dsh-settings` 的设置能力：没有挂载设置服务的组装（如 headless）不显示此卡片，此时仍可在补丁层配置 `provider` / `model`。
+
+### 补丁层字段（安装即带默认，可覆盖）
+
+以下字段由 bundle 自带的 `cordis.patch.yml` 提供默认值，**通常无需改动**；需要自定义时，在 profile 补丁层（`~/.dsh/profiles/web/cordis.patch.yml`）用 `- insert:` 覆盖同名 entry 的 `config`。这些字段**不在** WebUI 设置卡片中：
 
 | 字段 | 含义 | 默认 |
 |---|---|---|
@@ -74,19 +90,10 @@ npm install @studyzy/dsh-suggest-prompt @studyzy/dsh-client-ui-suggest-prompt
 | `maxRecentTurns` | 转录尾部保留的最近完成回合数 | `1`（只取最后一轮的用户输入 + AI 最终回答） |
 | `maxTranscriptChars` | 转录字符预算 | 必填 |
 | `maxSuggestionChars` | 建议的可见字符上限 | 必填 |
-| `provider` / `model` | 各自独立覆盖主请求路由的对应字段；省略的字段自动继承主请求路由。可在 WebUI「建议提示词」设置卡片中编辑，或写入 `~/.dsh/settings.yaml` | 继承 |
+| `provider` / `model` | 各自独立覆盖主请求路由的对应字段；省略的字段自动继承主请求路由 | 继承（也可经界面配置） |
 | `acceptKey` | 采纳建议的输入框快捷键 | `Tab`（可写 `Alt+Slash`、`Ctrl+Enter` 等） |
 
 > **`maxOutputTokens` 提示**：建议生成默认关闭思考（`reasoningEffort: off`），推理不消耗输出预算；但对无法关闭思考的模型（如部分 pi-ai 路由）会降级重试，此时思考仍会消耗预算——`maxOutputTokens` 偏小时，流会在输出建议文本之前就以 `max-tokens` 结束。这类模型请留足预算（例如 `512`）。
-
-### 在 WebUI 设置中配置建议模型
-
-挂载 `ui-suggest-prompt` 后，「设置 → 插件」会出现「建议提示词」卡片：
-
-- **Provider / Model**：从已安装的 provider 目录（内置 `DeepSeek` 与 pi-ai 各 provider）中选择建议生成使用的路由；选择「跟随会话路由」则不覆盖，继承主请求路由。
-- 编辑是暂存式的（带「未保存」标记与「放弃 / 保存」按钮），保存会写入 `~/.dsh/settings.yaml` 的 `suggest-prompt` 小节；**保存后下一个完成回合生效**，无需重启。
-- 下拉只会列出目录中显式声明的模型；某 provider 未声明模型列表时，模型字段退化为自由文本输入。
-- 依赖 `dsh-settings` 的设置能力：没有挂载设置服务的组装（如 headless）不显示此卡片，仍可用 `cordis.yml` / 补丁层配置。
 
 ## 工作方式
 
@@ -126,7 +133,7 @@ pnpm test       # vitest
 pnpm typecheck
 ```
 
-> **安装说明**：本仓库依赖已发布的 `@deepseek-ai/*` 包（deepseek-harness 工作区）。上游少数内部包（`@deepseek-ai/dsh-compact`、`@deepseek-ai/dsh-type-meta`、`@deepseek-ai/dsh-environment`）尚未出现在 npm registry，本仓库通过根 `package.json` 的 `pnpm.overrides` 把它们映射到本地 `stubs/` 空包，因此 `pnpm install` 可直接成功；等 registry 补齐后可移除 overrides 与 `stubs/`。完整测试矩阵在 harness monorepo 内运行；本仓库是两个包的权威源码副本。
+> **安装说明**：本仓库依赖已发布的 `@deepseek-ai/*` 包（deepseek-harness 工作区）。上游少数内部包（`@deepseek-ai/dsh-compact`、`@deepseek-ai/dsh-type-meta`、`@deepseek-ai/dsh-environment`）尚未出现在 npm registry，本仓库通过根 `package.json` 的 `pnpm.overrides` 把它们映射到本地 `stubs/` 空包，因此 `pnpm install` 可直接成功；等 registry 补齐后可移除 overrides 与 `stubs/`。完整测试矩阵在 harness monorepo 内运行；本仓库是单 bundle 包的权威源码副本。`pnpm build` 产出宿主 ESM（`lib/{index,invariant}.js`）与浏览器 bundle（`lib/client.js`），并生成 `lib/types/` 声明。
 
 ## 许可
 
@@ -138,18 +145,17 @@ MIT
 
 Suggested-next-prompt plugin for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). After every completed agent turn, a bounded auxiliary LLM call writes **one suggested next prompt** into the session log; the web side renders it as ghost placeholder text inside the composer — press **Tab** (default) to adopt it into the draft (the Claude Code behavior).
 
-This repository is the authoritative source of record for the two packages:
+This repository is the authoritative source of record for a **single bundle package** (`@studyzy/dsh-suggest-prompt`) that merges the host generation and the browser rendering into one one-command-installable bundle:
 
 | Package | Role |
 |---|---|
-| [`@studyzy/dsh-suggest-prompt`](packages/suggest-prompt) | Host plugin: generates the suggestion on `turn/end` (reason `completed`) and publishes the `suggestPrompt` session projection. |
-| [`@studyzy/dsh-client-ui-suggest-prompt`](packages/ui-suggest-prompt) | Browser plugin: reads the projection, renders the suggestion as ghost placeholder text inside the composer (`inputActions.setDraft`), and fills the draft on the configured shortcut. |
+| [`@studyzy/dsh-suggest-prompt`](.) | Host plugin (`.`, `./invariant`, `./types`): generates the suggestion on `turn/end` (reason `completed`) and publishes the `suggestPrompt` session projection. Browser plugin (`./client`): reads the projection, renders the suggestion as ghost placeholder text inside the composer (`inputActions.setDraft`), and fills the draft on the configured shortcut. |
 
 ## Features
 
 - **Lightweight by default**: without `provider` / `model` the suggestion inherits the route of the most recently logged main request — no model to pick just for suggestions; set them explicitly to route anywhere (for example a local OpenAI-compatible gateway).
 - **No thinking, fast and cheap**: the auxiliary call carries `reasoningEffort: off` by default (DeepSeek serializes it as `thinking: disabled`) so no budget is spent on a chain of thought; models that reject `off` retry once without the field.
-- **WebUI settings card**: after mounting, a "建议提示词" card appears under Settings → Plugins; pick the suggestion provider/model from the installed provider catalog (built-in DeepSeek + pi-ai routes) or keep "follow session route"; staged saves take effect on the next completed turn, and `~/.dsh/settings.yaml` works too.
+- **Route configured in the WebUI**: day-to-day, pick the suggestion provider/model from the "建议提示词" card under Settings → Plugins (or keep "follow session route"); saving takes effect on the next completed turn — no manual config-file edits. `~/.dsh/settings.yaml` is written by the UI for you.
 - **Last turn only**: by default only the last completed turn's user input and assistant final answer are sent to the suggestion model (`maxRecentTurns` defaults to `1`); intermediate tool calls / reasoning are never included.
 - **Bounded**: byte / token / timeout caps, a transcript budget, and a visible-character cap on the suggestion — all configurable.
 - **Safe**: transcripts are secret-redacted before framing; output is sanitized (control sequences, fences, quotes stripped, single line) and semantically filtered (meta-text, evaluative filler, assistant-voice phrasing are dropped as "no suggestion").
@@ -164,41 +170,58 @@ This repository is the authoritative source of record for the two packages:
 - Node.js `^22.19` or `>=24`, pnpm.
 - A dsh deployment built from the DeepSeek Harness (web profile). The browser side needs the `conversation.input.overlay` slot and `inputActions.setDraft` — both standard in the deepseek-harness web input machine.
 
-### From npm (once published)
+### From GitHub (default, one command)
 
-> Note: the full dependency chain of `@studyzy/dsh-suggest-prompt` and `@studyzy/dsh-client-ui-suggest-prompt` is not fully on the npm registry yet (upstream `@deepseek-ai/dsh-compact`, `@deepseek-ai/dsh-environment`, etc. are still missing). Once the registry is complete:
+This is a **single-package bundle**: the repo root `@studyzy/dsh-suggest-prompt` declares `dsh.bundle` (it ships its own `cordis.patch.yml`), so `dsh plugin add` pointing at the GitHub repository installs it as **one bundle layer of the profile** — no manual config-file edits.
 
 ```sh
-npm install @studyzy/dsh-suggest-prompt @studyzy/dsh-client-ui-suggest-prompt
+# From GitHub (recommended)
+dsh plugin --profile web add git@github.com:studyzy/dsh-suggest-prompt.git
+
+# Or HTTPS
+dsh plugin --profile web add https://github.com/studyzy/dsh-suggest-prompt.git
 ```
 
-Then mount the two rows in your profile's cordis.yml / patch layer (see the config example below).
+Then restart the running `dsh web` service. After install the profile layering becomes `dsh-base` → `dsh-web-app` → `@studyzy/dsh-suggest-prompt`.
 
-### From this repository's source (current)
+Uninstall:
 
-Put the two packages into the harness workspace (or reference this repo via a `file:` dependency), and insert the two rows in your profile patch layer. For example `~/.dsh/profiles/web/cordis.patch.yml`:
-
-```yaml
-- id: suggest-prompt
-  name: '@studyzy/dsh-suggest-prompt'
-  config:
-    maxInputBytes: 4096
-    maxOutputTokens: 512
-    timeoutMs: 60000
-    maxRecentTurns: 1
-    maxTranscriptChars: 12000
-    maxSuggestionChars: 240
-    provider: ccr
-    model: ttswitch/deepseek-v4-flash-ioa
-    acceptKey: Tab
-
-- id: ui-suggest-prompt
-  name: '@studyzy/dsh-client-ui-suggest-prompt'
+```sh
+dsh plugin --profile web remove @studyzy/dsh-suggest-prompt
 ```
 
-`provider` / `model` can be set independently: a set member overrides the matching member of the main request route, an omitted member inherits the most recently logged main request route, and omitting both follows the main request route entirely.
+> **pnpm ≥10 git note**: git-hosted plugins build on install via their `prepare` script, which pnpm blocks until allowed. If `add` fails, add the exact key pnpm printed to `allowBuilds` in `~/.dsh/profiles/web/pnpm-workspace.yaml`, then re-run `add`.
+
+### Local source (development)
+
+```sh
+dsh plugin --profile web add /path/to/dsh-suggest-prompt
+```
+
+### From npm (once published)
+
+```sh
+dsh plugin --profile web add @studyzy/dsh-suggest-prompt
+```
+
+> Note: every source ends up as the same bundle layer. The day-to-day suggestion provider/model is configured from the WebUI settings card (see Configuration below) — nothing to set at install time.
 
 ## Configuration
+
+Configuration is split in two: the **day-to-day route is set in the UI**, and the **one-time resource caps ship with sensible defaults in the bundle's patch layer** (overridable in your profile patch layer).
+
+### Configure the suggestion model in the WebUI (day-to-day)
+
+A "建议提示词" card appears under Settings → Plugins. This is the **primary entry point** for choosing the suggestion route — no manual config-file edits:
+
+- **Provider / Model**: pick the route the auxiliary call uses from the installed provider catalog (built-in DeepSeek + pi-ai routes); choosing "Follow session route" keeps the main request route.
+- Edits are staged (with an "Unsaved" marker and Discard / Save buttons); saving writes the `suggest-prompt` section of `~/.dsh/settings.yaml` for you, and **takes effect on the next completed turn** — no restart needed.
+- The dropdowns list only explicitly declared models; a provider without a declared model list degrades the model field to free-text input.
+- This rides the `dsh-settings` capability: assemblies without a settings service (e.g. headless) do not show the card and keep using `provider` / `model` in the patch layer.
+
+### Patch-layer fields (defaults ship with the bundle, overridable)
+
+The following are provided with defaults by the bundle's own `cordis.patch.yml` and **normally need no changes**; to customize, override the same entry's `config` via `- insert:` in your profile patch layer (`~/.dsh/profiles/web/cordis.patch.yml`). These are **not** in the WebUI settings card:
 
 | Field | Meaning | Default |
 |---|---|---|
@@ -208,19 +231,10 @@ Put the two packages into the harness workspace (or reference this repo via a `f
 | `maxRecentTurns` | Transcript tail keeps at most this many recent completed turns | `1` (only the last turn's user input + assistant final answer) |
 | `maxTranscriptChars` | Transcript character budget | required |
 | `maxSuggestionChars` | Visible-character cap for the suggestion | required |
-| `provider` / `model` | Each independently overrides the matching member of the main request route; omitted members inherit the main route. Editable from the WebUI "建议提示词" settings card, or via `~/.dsh/settings.yaml` | inherited |
+| `provider` / `model` | Each independently overrides the matching member of the main request route; omitted members inherit the main route | inherited (also editable from the WebUI) |
 | `acceptKey` | Composer shortcut that adopts a displayed suggestion | `Tab` (`Alt+Slash`, `Ctrl+Enter`, ...) |
 
 > **On `maxOutputTokens`**: suggestion generation disables thinking by default (`reasoningEffort: off`), so reasoning does not consume the output budget; but a model that cannot turn thinking off (some pi-ai routes) falls back to a retry where thinking still spends budget — a small `maxOutputTokens` then ends the stream with `max-tokens` before any suggestion text is produced. Leave a generous budget (e.g. `512`) for such models.
-
-### Configure the suggestion model in the WebUI
-
-Once `ui-suggest-prompt` is mounted, a "建议提示词" card appears under Settings → Plugins:
-
-- **Provider / Model**: pick the route the auxiliary call uses from the installed provider catalog (built-in DeepSeek + pi-ai routes); choosing "Follow session route" keeps the main request route.
-- Edits are staged (with an "Unsaved" marker and Discard / Save buttons); saving writes the `suggest-prompt` section of `~/.dsh/settings.yaml`, and **takes effect on the next completed turn** — no restart needed.
-- The dropdowns list only explicitly declared models; a provider without a declared model list degrades the model field to free-text input.
-- This rides the `dsh-settings` capability: assemblies without a settings service (e.g. headless) do not show the card and keep using `cordis.yml` / the patch layer.
 
 ## How it works
 
@@ -260,7 +274,7 @@ pnpm test       # vitest
 pnpm typecheck
 ```
 
-> **Install caveat**: this repo depends on the published `@deepseek-ai/*` packages (the DeepSeek Harness workspace). A small number of internal packages referenced by the published `dsh-*` releases are not yet on the npm registry (`@deepseek-ai/dsh-compact`, `@deepseek-ai/dsh-type-meta`, `@deepseek-ai/dsh-environment`); the root `package.json` `pnpm.overrides` map them to the local empty `stubs/` packages, so `pnpm install` succeeds out of the box — remove the overrides and `stubs/` once the registry is complete. The full test matrix runs inside the harness monorepo; this repo is the source-of-record copy for the two packages.
+> **Install caveat**: this repo depends on the published `@deepseek-ai/*` packages (the DeepSeek Harness workspace). A small number of internal packages referenced by the published `dsh-*` releases are not yet on the npm registry (`@deepseek-ai/dsh-compact`, `@deepseek-ai/dsh-type-meta`, `@deepseek-ai/dsh-environment`); the root `package.json` `pnpm.overrides` map them to the local empty `stubs/` packages, so `pnpm install` succeeds out of the box — remove the overrides and `stubs/` once the registry is complete. The full test matrix runs inside the harness monorepo; this repo is the source-of-record copy for the single bundle package. `pnpm build` emits the host ESM (`lib/{index,invariant}.js`), the browser bundle (`lib/client.js`), and the `lib/types/` declarations.
 
 ## License
 

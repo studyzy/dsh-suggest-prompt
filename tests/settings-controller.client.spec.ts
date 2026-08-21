@@ -28,7 +28,7 @@ vi.mock('@deepseek-ai/dsh-client-runtime/client', () => ({
   },
 }))
 
-import { SuggestPromptCardController } from '../src/client/settings-controller.ts'
+import { SuggestPromptCardController } from '../src/browser/settings-controller.ts'
 
 /** Minimal fake scope with a scriptable user layer and write behavior. */
 function makeScope<T>(init: {

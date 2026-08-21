@@ -1,10 +1,9 @@
 // @vitest-environment jsdom
 /**
- * ui-suggest-prompt browser half on a real cordis Context with a minimal
+ * suggest-prompt browser half on a real cordis Context with a minimal
  * SlotRegistry stand-in: the plugin registers the suggestion ghost entry at
  * conversation.input.overlay with the suggest-prompt id, and the registration
- * drops when the plugin fiber unloads (HMR safety). The node half is
- * exercised over the same Context.
+ * drops when the plugin fiber unloads (HMR safety).
  *
  * The npm `@deepseek-ai/dsh-client-runtime` package ships only the browser
  * bundle (bootstrapped through window.__ModuleLoader__), which jsdom cannot
@@ -14,8 +13,7 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import { apply, inject } from '../src/client/index.ts'
-import { apply as nodeApply } from '../src/index.ts'
+import { apply, inject } from '../src/browser/index.ts'
 
 // The published runtime bundle bootstraps through window.__ModuleLoader__, which
 // jsdom does not provide; stub the value imports the plugin chain uses so the
@@ -146,13 +144,5 @@ describe('ui-suggest-prompt browser plugin', () => {
     })
     await fiber.dispose()
     expect(ctx.slots.entries('conversation.input.overlay')).toHaveLength(0)
-  })
-})
-
-describe('ui-suggest-prompt node half', () => {
-  // The invariant companion is mounted by the vitest-wide invariant host on
-  // every Context this suite creates; its registration is covered there.
-  it('the node apply is an inert loader seat', () => {
-    expect(() => { nodeApply() }).not.toThrow()
   })
 })

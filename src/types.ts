@@ -3,7 +3,7 @@
  * `suggestPrompt` projection-key declaration plus the durable payload
  * vocabulary it carries, free of this package's host-side imports (cordis
  * events, dsh-llm, the plugin). Two namespace projections serve it — `./types`
- * for host consumers, `./client` (the browser half-entry's re-export) for
+ * for host consumers, `./client` (the browser half-entry re-exports these) for
  * client aggregates — with zero content duplication. Host-coupled vocabulary
  * (event payloads, message sources) lives in ./domain.ts.
  *
@@ -17,8 +17,8 @@
  * events, dsh-llm, the plugin). The deployment {@link Config} lives on the
  * plugin itself (`src/index.ts`) because the config catalog pastes
  * declarations verbatim. Two namespace projections serve this outlet —
- * `./types` for host consumers, `./client` (the browser half-entry's
- * re-export) for client aggregates — with zero content duplication.
+ * `./types` for host consumers, `./client` (the browser half-entry
+ * re-exports these) for client aggregates — with zero content duplication.
  * Host-coupled vocabulary (event payloads, message sources) lives in
  * ./domain.ts.
  *

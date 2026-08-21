@@ -9,8 +9,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
 import type { ConversationSnapshot, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import { GhostSuggestion } from '../src/client/GhostSuggestion.tsx'
-import type { GhostSuggestionProps } from '../src/client/GhostSuggestion.tsx'
+import { GhostSuggestion } from '../src/browser/GhostSuggestion.tsx'
+import type { GhostSuggestionProps } from '../src/browser/GhostSuggestion.tsx'
 import type { SuggestPromptProjection } from '@studyzy/dsh-suggest-prompt/client'
 
 afterEach(cleanup)
