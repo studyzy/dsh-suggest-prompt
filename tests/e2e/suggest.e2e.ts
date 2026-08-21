@@ -81,6 +81,10 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('suggest-prompt browser e2e (real
   let browser: Browser
   let page: Page
   const pageErrors: string[] = []
+  // The spawned `dsh web`'s own output (stdout+stderr). Captured so a failure
+  // can print the host's internal logs — e.g. whether suggestion generation
+  // failed or was silently skipped — which Playwright's assertion alone hides.
+  const webLog: string[] = []
 
   beforeAll(async () => {
     // Isolated world: never touches the real ~/.dsh.
@@ -124,6 +128,8 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('suggest-prompt browser e2e (real
       env: spawnEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
+    child.stdout?.on('data', chunk => webLog.push(chunk.toString()))
+    child.stderr?.on('data', chunk => webLog.push(chunk.toString()))
     baseUrl = await waitForReadyLine(child)
 
     browser = await chromium.launch()
@@ -144,7 +150,14 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('suggest-prompt browser e2e (real
   })
 
   it('suggests a next prompt after the assistant answers a math question', async () => {
-    onTestFailed(() => saveFailureShot(page, 'suggest-e2e'))
+    onTestFailed(() => {
+      saveFailureShot(page, 'suggest-e2e').catch(() => {})
+      // Surface the host's own logs so a ghost timeout reveals whether the
+      // suggestion never generated (an error/warn) vs. generated but not
+      // rendered. Truncate to the tail (suggestions happen at the very end).
+      const hostLog = webLog.join('').split('\n').filter(Boolean)
+      console.error(`--- dsh web log tail (${hostLog.length} lines) ---\n${hostLog.slice(-80).join('\n')}`)
+    })
     const apiKey = process.env.DEEPSEEK_API_KEY as string
 
     // First-run onboarding: store the DeepSeek key through the UI.
