@@ -14,9 +14,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # No explicit version: pnpm/action-setup reads `packageManager` from
+      # package.json (pnpm@9.15.0). Passing `version` here while package.json
+      # also pins `packageManager` trips the action's version-mismatch guard
+      # (ERR_PNPM_BAD_PM_VERSION), so let the field drive it.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - uses: actions/setup-node@v4
         with:
@@ -48,11 +50,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # No explicit version (reads packageManager pnpm@9.15.0) — same reason
+      # as the build job; we upgrade pnpm to ≥10 below for dsh's use.
       - uses: pnpm/action-setup@v4
-        with:
-          # pnpm 10: dsh manages profile plugins with pnpm and pnpm 9 rejects
-          # adding to a workspace root, so the e2e lane must expose pnpm ≥10.
-          version: 10
 
       - uses: actions/setup-node@v4
         with:
@@ -64,6 +64,15 @@ jobs:
 
       - name: Build the plugin
         run: pnpm build
+
+      # dsh manages a profile's plugins with `pnpm` from PATH, and pnpm 9
+      # rejects `pnpm add` to a workspace root — so expose pnpm ≥10 for the
+      # spawned `dsh web` install step (the test's resolvePnpmBinDir detects it
+      # on PATH and skips its corepack fallback).
+      - name: Upgrade pnpm for dsh
+        run: |
+          npm install -g pnpm@10
+          pnpm --version
 
       # The latest dsh (rc.8 on the `next` tag) ships the web app dist and
       # manages profile plugins with its own pnpm.
