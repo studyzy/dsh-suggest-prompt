@@ -238,6 +238,32 @@ describe('buildTranscript', () => {
     expect(transcript.pairs.map(pair => pair.text)).toEqual(['有文本'])
     expect(transcript.sourceMessageSeqs).toHaveLength(1)
   })
+
+  it('excludes harness-injected user context, keeping only genuine user input', () => {
+    // Harness writes workspace instructions, runtime snapshots, and the skill
+    // catalog as user/message events (source.kind 'agent-instructions' /
+    // 'plugin' / 'skill-catalog'). These can be huge; counting them would blow
+    // maxInputBytes on a fresh session's first turn and suppress suggestions.
+    const session = Session.create(SessionId('injected-context'))
+    session.append('turn/start', { turn: 1 })
+    // A huge injected context first (would dominate the transcript if kept).
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: `<system-reminder>\n${'x'.repeat(20_000)}\n</system-reminder>` }],
+      source: { kind: 'agent-instructions', form: 'instructions', baseline: true },
+    }), { surfaceOp: 'append' })
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'Current runtime context. ...' }],
+      source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt', form: 'snapshot' },
+    }), { surfaceOp: 'append' })
+    session.append('user/message', userMessage('出一道小学数学题给我'), { surfaceOp: 'append' })
+    session.append('assistant/message', { turn: 1, step: 1, message: assistantMessage('好的，题目是……') }, { surfaceOp: 'append' })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+
+    const transcript = buildTranscript(session, 1, 500)!
+    // Only the real prompt survives; the injected context is dropped.
+    expect(transcript.pairs.map(pair => pair.text)).toEqual(['出一道小学数学题给我', '好的，题目是……'])
+    expect(transcript.sourceMessageSeqs).toHaveLength(2)
+  })
 })
 
 describe('applySuggestPromptProjection', () => {

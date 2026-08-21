@@ -1,16 +1,23 @@
 # dsh-suggest-prompt
 
+[![MIT License](https://img.shields.io/github/license/studyzy/dsh-suggest-prompt)](LICENSE)
+[![npm version](https://img.shields.io/npm/v/@studyzy/dsh-suggest-prompt)](https://www.npmjs.com/package/@studyzy/dsh-suggest-prompt)
+
 为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 开发的「建议提示词」插件：每个 agent 回合完成后，通过一次有界的辅助 LLM 调用，在会话日志中写入**一条建议的下一条提示词**；Web 端把它渲染成输入框内部的浅色幽灵占位文字，按 **Tab**（默认）即可采纳进草稿（与 Claude Code 一致）。
 
 > 想快速上手？直接看 **[使用说明](USAGE.zh.md)**（面向终端用户的操作指南）。
+>
+> **[Read this in English](#dsh-suggest-prompt-1)** · 中文文档
 
-本仓库是**单个 bundle 包**（`@studyzy/dsh-suggest-prompt`）的权威源码，把宿主生成与浏览器渲染合并为一个可一键安装的 bundle：
+对于开发者 / 维护者：本仓库是**单个 bundle 包**（`@studyzy/dsh-suggest-prompt`）的权威源码，把宿主生成与浏览器渲染合并为一个可一键安装的 bundle：
 
 | 包 | 作用 |
 |---|---|
 | [`@studyzy/dsh-suggest-prompt`](.) | 宿主插件（`.`, `./invariant`, `./types`）：在 `turn/end`（reason=`completed`）时生成建议，发布 `suggestPrompt` 会话投影。浏览器插件（`./client`）：读取投影，渲染为输入框内部的浅色幽灵占位文字（`inputActions.setDraft`），按配置的快捷键填入草稿。 |
 
 ## 特性
+
+一个自动「接话」助手：AI 答完后，它替你预测下一句该说什么——既省去反复输入，又不会打断你的思路。
 
 - **默认轻量**：不配置 `provider` / `model` 时继承主请求最近一次记录的路由，无需为建议单独选模型；需要时也可显式指定任意路由（例如本地 OpenAI 兼容网关）。
 - **免思考、快速便宜**：建议生成默认携带 `reasoningEffort: off`（DeepSeek 序列化为 `thinking: disabled`），不消耗推理预算；模型不支持该参数时自动去掉并重试一次。
@@ -21,6 +28,12 @@
 - **无建议是常态**：模型回复为空或不合格时静默跳过，不报错、不写事件、不打扰。
 - **免调用重显**：删回空草稿会重新显示已持久化的建议，不再发新的模型请求。
 - **快捷键可配**：采纳快捷键通过 `acceptKey` 配置，默认 `Tab`。
+
+## 效果预览
+
+每个 agent 回合完成后，建议模型会在输入框里以浅色幽灵占位文字的形式显示一条预测，按 **Tab** 即可采纳进草稿：
+
+![输入框中的幽灵建议](assets/suggest-prompt.png)
 
 ## 安装
 
@@ -78,18 +91,20 @@ dsh plugin --profile web add @studyzy/dsh-suggest-prompt
 - 下拉只会列出目录中显式声明的模型；某 provider 未声明模型列表时，模型字段退化为自由文本输入。
 - 依赖 `dsh-settings` 的设置能力：没有挂载设置服务的组装（如 headless）不显示此卡片，此时仍可在补丁层配置 `provider` / `model`。
 
+![建议提示词设置卡片](assets/config.png)
+
 ### 补丁层字段（安装即带默认，可覆盖）
 
-以下字段由 bundle 自带的 `cordis.patch.yml` 提供默认值，**通常无需改动**；需要自定义时，在 profile 补丁层（`~/.dsh/profiles/web/cordis.patch.yml`）用 `- insert:` 覆盖同名 entry 的 `config`。这些字段**不在** WebUI 设置卡片中：
+以下字段由 bundle 自带的 `cordis.patch.yml` 提供默认值，**通常无需改动**；需要自定义时，在 profile 补丁层（`~/.dsh/profiles/web/cordis.patch.yml`）用 `- insert:` 覆盖同名 entry 的 `config`。除 `provider` / `model`（可在界面配置）外，这些字段**不在** WebUI 设置卡片中：
 
-| 字段 | 含义 | 默认 |
+| 字段 | 含义 | 默认值 |
 |---|---|---|
-| `maxInputBytes` | 最终框架化用户提示的最大 UTF-8 字节数 | 必填 |
-| `maxOutputTokens` | 建议生成输出令牌上限 | 必填 |
-| `timeoutMs` | 辅助请求端到端截止时间（毫秒） | 必填 |
+| `maxInputBytes` | 最终框架化用户提示的最大 UTF-8 字节数 | `4096` |
+| `maxOutputTokens` | 建议生成输出令牌上限 | `512` |
+| `timeoutMs` | 辅助请求端到端截止时间（毫秒） | `60000` |
 | `maxRecentTurns` | 转录尾部保留的最近完成回合数 | `1`（只取最后一轮的用户输入 + AI 最终回答） |
-| `maxTranscriptChars` | 转录字符预算 | 必填 |
-| `maxSuggestionChars` | 建议的可见字符上限 | 必填 |
+| `maxTranscriptChars` | 转录字符预算 | `12000` |
+| `maxSuggestionChars` | 建议的可见字符上限 | `240` |
 | `provider` / `model` | 各自独立覆盖主请求路由的对应字段；省略的字段自动继承主请求路由 | 继承（也可经界面配置） |
 | `acceptKey` | 采纳建议的输入框快捷键 | `Tab`（可写 `Alt+Slash`、`Ctrl+Enter` 等） |
 
@@ -151,15 +166,19 @@ MIT
 
 # dsh-suggest-prompt
 
+> **[阅读中文版](#dsh-suggest-prompt)** · English
+
 Suggested-next-prompt plugin for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). After every completed agent turn, a bounded auxiliary LLM call writes **one suggested next prompt** into the session log; the web side renders it as ghost placeholder text inside the composer — press **Tab** (default) to adopt it into the draft (the Claude Code behavior).
 
-This repository is the authoritative source of record for a **single bundle package** (`@studyzy/dsh-suggest-prompt`) that merges the host generation and the browser rendering into one one-command-installable bundle:
+For developers / maintainers: this repository is the authoritative source of record for a **single bundle package** (`@studyzy/dsh-suggest-prompt`) that merges the host generation and the browser rendering into one one-command-installable bundle:
 
 | Package | Role |
 |---|---|
 | [`@studyzy/dsh-suggest-prompt`](.) | Host plugin (`.`, `./invariant`, `./types`): generates the suggestion on `turn/end` (reason `completed`) and publishes the `suggestPrompt` session projection. Browser plugin (`./client`): reads the projection, renders the suggestion as ghost placeholder text inside the composer (`inputActions.setDraft`), and fills the draft on the configured shortcut. |
 
 ## Features
+
+An automatic "next line" companion: after the AI answers, it predicts what you'd say next — saving repeated typing without interrupting your flow.
 
 - **Lightweight by default**: without `provider` / `model` the suggestion inherits the route of the most recently logged main request — no model to pick just for suggestions; set them explicitly to route anywhere (for example a local OpenAI-compatible gateway).
 - **No thinking, fast and cheap**: the auxiliary call carries `reasoningEffort: off` by default (DeepSeek serializes it as `thinking: disabled`) so no budget is spent on a chain of thought; models that reject `off` retry once without the field.
@@ -170,6 +189,12 @@ This repository is the authoritative source of record for a **single bundle pack
 - **Silent no-suggestion**: an empty or rejectable model reply is skipped quietly — no error, no event, no noise.
 - **Re-arm without a call**: deleting back to an empty draft re-shows the persisted suggestion with no new model request.
 - **Configurable shortcut**: the adopt shortcut is set via `acceptKey`, default `Tab`.
+
+## Preview
+
+After every completed agent turn, the suggestion model renders the predicted next prompt as light ghost placeholder text inside the composer. Press **Tab** to adopt it into the draft:
+
+![Ghost suggestion in the composer](assets/suggest-prompt.png)
 
 ## Install
 
@@ -227,18 +252,20 @@ A "建议提示词" card appears under Settings → Plugins. This is the **prima
 - The dropdowns list only explicitly declared models; a provider without a declared model list degrades the model field to free-text input.
 - This rides the `dsh-settings` capability: assemblies without a settings service (e.g. headless) do not show the card and keep using `provider` / `model` in the patch layer.
 
+![Suggestion prompt settings card](assets/config.png)
+
 ### Patch-layer fields (defaults ship with the bundle, overridable)
 
-The following are provided with defaults by the bundle's own `cordis.patch.yml` and **normally need no changes**; to customize, override the same entry's `config` via `- insert:` in your profile patch layer (`~/.dsh/profiles/web/cordis.patch.yml`). These are **not** in the WebUI settings card:
+The following are provided with defaults by the bundle's own `cordis.patch.yml` and **normally need no changes**; to customize, override the same entry's `config` via `- insert:` in your profile patch layer (`~/.dsh/profiles/web/cordis.patch.yml`). Except for `provider` / `model` (editable in the UI), these are **not** in the WebUI settings card:
 
 | Field | Meaning | Default |
 |---|---|---|
-| `maxInputBytes` | Maximum UTF-8 bytes in the final framed user prompt | required |
-| `maxOutputTokens` | Suggestion output-token cap | required |
-| `timeoutMs` | End-to-end auxiliary request deadline (ms) | required |
+| `maxInputBytes` | Maximum UTF-8 bytes in the final framed user prompt | `4096` |
+| `maxOutputTokens` | Suggestion output-token cap | `512` |
+| `timeoutMs` | End-to-end auxiliary request deadline (ms) | `60000` |
 | `maxRecentTurns` | Transcript tail keeps at most this many recent completed turns | `1` (only the last turn's user input + assistant final answer) |
-| `maxTranscriptChars` | Transcript character budget | required |
-| `maxSuggestionChars` | Visible-character cap for the suggestion | required |
+| `maxTranscriptChars` | Transcript character budget | `12000` |
+| `maxSuggestionChars` | Visible-character cap for the suggestion | `240` |
 | `provider` / `model` | Each independently overrides the matching member of the main request route; omitted members inherit the main route | inherited (also editable from the WebUI) |
 | `acceptKey` | Composer shortcut that adopts a displayed suggestion | `Tab` (`Alt+Slash`, `Ctrl+Enter`, ...) |
 

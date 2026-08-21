@@ -243,6 +243,13 @@ export function buildTranscript(
     if (message === null) continue
     const text = renderMessageText(message).trim()
     if (text.length === 0) continue
+    // Keep only genuine user-typed input, never harness-injected context.
+    // Harness writes workspace instructions (agent-instructions), the runtime
+    // snapshot (plugin @deepseek-ai/dsh-system-prompt) and the skill catalog
+    // (skill-catalog) as user/message events; those can be huge and would blow
+    // the maxInputBytes bound on the first turn of a fresh session, silently
+    // suppressing every suggestion. The genuine prompt is source.kind 'user'.
+    if (message.role === 'user' && (message.source as { kind?: unknown }).kind !== 'user') continue
     pairs.push({ role: message.role === 'user' ? 'user' : 'assistant', text: redactSecrets(text) })
     sourceMessageSeqs.push(event.seq)
     baseSeq = event.seq
