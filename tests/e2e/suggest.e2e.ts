@@ -157,7 +157,26 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('suggest-prompt browser e2e (real
 
   it('suggests a next prompt after the assistant answers a math question', async () => {
     onTestFailed(() => {
-      saveFailureShot(page, 'suggest-e2e').catch(() => {})
+      // Live DOM snapshot first (robust to screenshot/fs failures): whether a
+      // turn was sent, the agent is still running, and what the composer shows.
+      page.evaluate(() => {
+        const describe = (el: Element): string => {
+          const role = el.getAttribute('role')
+          const aria = el.getAttribute('aria-label')
+          const text = (el.textContent ?? '').trim().slice(0, 80)
+          return `[${role ?? el.tagName.toLowerCase()} aria-label=${aria ?? ''}] "${text}"`
+        }
+        const dialogs = [...document.querySelectorAll('[role="dialog"],[role="menu"]')].map(describe)
+        const textareas = [...document.querySelectorAll('textarea')].map(describe)
+        const ghost = [...document.querySelectorAll('[data-suggest-prompt-ghost]')].map(describe)
+        const running = document.querySelector('[data-running]') !== null
+        return { dialogs, textareas, ghost, running, url: location.href }
+      }).then(snapshot => {
+        console.error(`--- page snapshot ---\n${JSON.stringify(snapshot, null, 2)}`)
+      }).catch(error => { console.error(`--- page snapshot failed: ${error} ---`) })
+      saveFailureShot(page, 'suggest-e2e').catch((error: unknown) => {
+        console.error(`--- saveFailureShot failed: ${String(error)} ---`)
+      })
       // Surface the host's own logs so a ghost timeout reveals whether the
       // suggestion never generated (an error/warn) vs. generated but not
       // rendered. Truncate to the tail (suggestions happen at the very end).
