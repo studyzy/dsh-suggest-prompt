@@ -1,7 +1,7 @@
 {
   "name": "@studyzy/dsh-suggest-prompt",
-  "description": "Suggested next prompt for the DeepSeek Harness: a single bundle combining the host generation plugin and the web composer ghost-text surface. After each completed agent turn a bounded auxiliary LLM call writes one suggested next prompt into the session log; the web composer renders it as ghost placeholder text, adopted via a configurable shortcut (default Tab).",
-  "version": "1.0.0",
+  "description": "为 DeepSeek Harness 开发的「建议提示词」插件：单个 bundle 集成了宿主生成插件与 Web 输入框幽灵文字界面。每个 agent 回合完成后，通过一次有界的辅助 LLM 调用在会话日志中写入一条建议的下一条提示词；Web 端把它渲染为输入框内的幽灵占位文字，通过可配置的快捷键（默认 Tab）采纳进草稿。",
+  "version": "1.0.1",
   "publishConfig": {
     "access": "public"
   },
