@@ -40,7 +40,7 @@
 ### 前置条件
 
 - Node.js `^22.19` 或 `>=24`、pnpm。
-- 一个基于 deepseek-harness 的 dsh 部署（web profile）。浏览器端需要 `conversation.input.overlay` 槽位与 `inputActions.setDraft`（deepseek-harness 的标准 web 输入机均已提供）。
+- 一个基于 deepseek-harness 的 dsh 部署（web profile），**dsh ≥ 0.1.1-rc.1**（0.1.1 变更了会话投影注册契约，本插件的宿主端按该契约适配；在 0.1.0 下投影不会同步到 Web 端）。浏览器端需要 `conversation.input.overlay` 槽位与 `inputActions.setDraft`（deepseek-harness 的标准 web 输入机均已提供）。
 
 ### 从 GitHub 安装（默认方式，一行命令）
 
@@ -155,7 +155,7 @@ pnpm test:e2e:local # local e2e against your real ~/.dsh (macOS: visible browser
 
 > **E2E（本地）**：`pnpm test:e2e:local` 复用你的真实 `~/.dsh`（不装 dsh、不跑 onboarding、不连工作区——本机已就绪），把**当前源码** link 进本地 web profile（`dsh plugin add`），起 `dsh web` 后用 Playwright 把「建议提示词」模型设为 DeepSeek Flash（ccr / `hai/DeepSeek-V4-Flash`），输入「出一道小学数学题给我」并断言幽灵建议出现。macOS 下**弹出可见浏览器**，Linux 下 headless。**会写真实 `~/.dsh`**（suggest-prompt 模型与 profile 依赖来源）——仅限本地开发验证，不入 CI。
 
-> **安装说明**：本仓库依赖已发布的 `@deepseek-ai/*` 包（deepseek-harness 工作区）。上游少数内部包（`@deepseek-ai/dsh-compact`、`@deepseek-ai/dsh-type-meta`、`@deepseek-ai/dsh-environment`）尚未出现在 npm registry，本仓库通过根 `package.json` 的 `pnpm.overrides` 把它们映射到本地 `stubs/` 空包，因此 `pnpm install` 可直接成功；等 registry 补齐后可移除 overrides 与 `stubs/`。完整测试矩阵在 harness monorepo 内运行；本仓库是单 bundle 包的权威源码副本。`pnpm build` 产出宿主 ESM（`lib/{index,invariant}.js`）、浏览器 bundle（`lib/client.js`）与 `lib/types/` 声明。
+> **安装说明**：本仓库依赖已发布的 `@deepseek-ai/*` 包（deepseek-harness 工作区）。上游少数内部包（`@deepseek-ai/dsh-compact`、`@deepseek-ai/dsh-type-meta`、`@deepseek-ai/dsh-environment`）尚未出现在 npm registry，本仓库通过根 `package.json` 的 `pnpm.overrides` 把它们映射到本地 `stubs/` 空包；同时用一条 `@deepseek-ai/dsh-*: 0.1.1-rc.1` override 把整个 dsh 依赖集统一到当前插件所适配的 0.1.1-rc.1（与本仓库针对 0.1.1 投影契约的适配保持一致），因此 `pnpm install` 可直接成功；等 registry 补齐、上游稳定后，这两处 overrides 与 `stubs/` 均可清理。完整测试矩阵在 harness monorepo 内运行；本仓库是单 bundle 包的权威源码副本。`pnpm build` 产出宿主 ESM（`lib/{index,invariant}.js`）、浏览器 bundle（`lib/client.js`）与 `lib/types/` 声明。
 
 > **`prepare` 脚本**：`package.json` 的 `prepare` 脚本会在 `pnpm install`（含 `dsh plugin add <git-url>` 的安装流程）时自动运行 `pnpm build` 现场构建 `lib/`，产物不入库。因此源码改动后无需手动构建即可被本地 dsh 加载；从 Git 安装也总能拿到完整产物（含类型声明）。
 
@@ -202,7 +202,7 @@ After every completed agent turn, the suggestion model renders the predicted nex
 ### Prerequisites
 
 - Node.js `^22.19` or `>=24`, pnpm.
-- A dsh deployment built from the DeepSeek Harness (web profile). The browser side needs the `conversation.input.overlay` slot and `inputActions.setDraft` — both standard in the deepseek-harness web input machine.
+- A dsh deployment built from the DeepSeek Harness (web profile), **dsh ≥ 0.1.1-rc.1** (0.1.1 changed the session-projection registration contract; this plugin's host half is adapted to it — on 0.1.0 the projection is not synced to the web side). The browser side needs the `conversation.input.overlay` slot and `inputActions.setDraft` — both standard in the deepseek-harness web input machine.
 
 ### From GitHub (default, one command)
 
@@ -317,7 +317,7 @@ pnpm test:e2e:local # local e2e against your real ~/.dsh (macOS: visible browser
 
 > **E2E (local)**: `pnpm test:e2e:local` reuses your real `~/.dsh` (no dsh install, no onboarding, no workspace pick — your machine is already set up). It links the **current source** into the local web profile via `dsh plugin add`, starts `dsh web`, then drives Playwright to set the "建议提示词" suggestion model to DeepSeek Flash (ccr / `hai/DeepSeek-V4-Flash`), sends "出一道小学数学题给我", and asserts a ghost suggestion appears. On macOS the browser runs **headful** (watch it drive the UI); headless elsewhere. It **writes to your real `~/.dsh`** (the suggest-prompt model and the profile's dependency source) — local development only, not part of CI.
 
-> **Install caveat**: this repo depends on the published `@deepseek-ai/*` packages (the DeepSeek Harness workspace). A small number of internal packages referenced by the published `dsh-*` releases are not yet on the npm registry (`@deepseek-ai/dsh-compact`, `@deepseek-ai/dsh-type-meta`, `@deepseek-ai/dsh-environment`); the root `package.json` `pnpm.overrides` map them to the local empty `stubs/` packages, so `pnpm install` succeeds out of the box — remove the overrides and `stubs/` once the registry is complete. The full test matrix runs inside the harness monorepo; this repo is the source-of-record copy for the single bundle package. `pnpm build` emits the host ESM (`lib/{index,invariant}.js`), the browser bundle (`lib/client.js`), and the `lib/types/` declarations.
+> **Install caveat**: this repo depends on the published `@deepseek-ai/*` packages (the DeepSeek Harness workspace). A small number of internal packages referenced by the published `dsh-*` releases are not yet on the npm registry (`@deepseek-ai/dsh-compact`, `@deepseek-ai/dsh-type-meta`, `@deepseek-ai/dsh-environment`); the root `package.json` `pnpm.overrides` map them to the local empty `stubs/` packages. A second override (`@deepseek-ai/dsh-*: 0.1.1-rc.1`) pins the whole dsh dependency set to the 0.1.1-rc.1 release this plugin targets (aligned with its projection-contract adaptation), so `pnpm install` succeeds out of the box — remove both overrides and `stubs/` once the registry is complete and the upstream stabilizes. The full test matrix runs inside the harness monorepo; this repo is the source-of-record copy for the single bundle package. `pnpm build` emits the host ESM (`lib/{index,invariant}.js`), the browser bundle (`lib/client.js`), and the `lib/types/` declarations.
 
 > **The `prepare` script**: `package.json`'s `prepare` runs `pnpm build` on `pnpm install` (including `dsh plugin add <git-url>`), building `lib/` on the spot. The build output is never committed, so source edits take effect for a local dsh load without a manual build, and a Git install always receives a complete artifact set (types included).
 

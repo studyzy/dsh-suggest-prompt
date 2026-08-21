@@ -33,6 +33,8 @@ dsh plugin --profile web add https://github.com/studyzy/dsh-suggest-prompt.git
 
 装完它自动成为 profile 的一个 bundle 层（`dsh-base` → `dsh-web-app` → `@studyzy/dsh-suggest-prompt`），浏览器端与宿主插件都会生效，**无需手动改配置文件**。
 
+> 需要 **dsh ≥ 0.1.1-rc.1**（0.1.1 变更了会话投影契约，本插件按该版本适配；更早的 0.1.0 下建议不会显示到输入框）。可用 `dsh --version` 查看当前版本。
+
 > 本地源码开发用 `dsh plugin --profile web add /path/to/dsh-suggest-prompt`。安装、放行 git 构建、卸载详见 [README.md](README.md) 的「安装」一节。
 
 ### 第 2 步：重启 web 服务并观察
