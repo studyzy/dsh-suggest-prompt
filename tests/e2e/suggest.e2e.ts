@@ -81,12 +81,11 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('suggest-prompt browser e2e (real
   let browser: Browser
   let page: Page
   const pageErrors: string[] = []
-  // Browser console messages (esp. errors) — the frontend bundle's own voice
-  // when a React tree crashes (e.g. the settings card) without a host log.
+  // Browser console errors — a crashed React tree leaves no host log, so this
+  // captures the frontend bundle's own voice for a failing ghost assertion.
   const consoleErrors: string[] = []
-  // The spawned `dsh web`'s own output (stdout+stderr). Captured so a failure
-  // can print the host's internal logs — e.g. whether suggestion generation
-  // failed or was silently skipped — which Playwright's assertion alone hides.
+  // The spawned `dsh web`'s own output (stdout+stderr), printed on failure so
+  // a ghost timeout reveals whether generation errored or was silently skipped.
   const webLog: string[] = []
 
   beforeAll(async () => {
@@ -156,38 +155,19 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('suggest-prompt browser e2e (real
   })
 
   it('suggests a next prompt after the assistant answers a math question', async () => {
-    onTestFailed(() => {
-      // Live DOM snapshot first (robust to screenshot/fs failures): whether a
-      // turn was sent, the agent is still running, and what the composer shows.
-      page.evaluate(() => {
-        const describe = (el: Element): string => {
-          const role = el.getAttribute('role')
-          const aria = el.getAttribute('aria-label')
-          const text = (el.textContent ?? '').trim().slice(0, 80)
-          return `[${role ?? el.tagName.toLowerCase()} aria-label=${aria ?? ''}] "${text}"`
-        }
-        const dialogs = [...document.querySelectorAll('[role="dialog"],[role="menu"]')].map(describe)
-        const textareas = [...document.querySelectorAll('textarea')].map(describe)
-        const ghost = [...document.querySelectorAll('[data-suggest-prompt-ghost]')].map(describe)
-        const running = document.querySelector('[data-running]') !== null
-        return { dialogs, textareas, ghost, running, url: location.href }
-      }).then(snapshot => {
-        console.error(`--- page snapshot ---\n${JSON.stringify(snapshot, null, 2)}`)
-      }).catch(error => { console.error(`--- page snapshot failed: ${error} ---`) })
+    onTestFailed(async () => {
+      // Failure evidence: a screenshot + page-state JSON, plus the frontend's
+      // own errors and the host's stdout/stderr — together they distinguish a
+      // crashed React tree, a generation error, and a silently skipped turn.
       saveFailureShot(page, 'suggest-e2e').catch((error: unknown) => {
         console.error(`--- saveFailureShot failed: ${String(error)} ---`)
       })
-      // Surface the host's own logs so a ghost timeout reveals whether the
-      // suggestion never generated (an error/warn) vs. generated but not
-      // rendered. Truncate to the tail (suggestions happen at the very end).
-      const hostLog = webLog.join('').split('\n').filter(Boolean)
-      console.error(`--- dsh web log tail (${hostLog.length} lines) ---\n${hostLog.slice(-80).join('\n')}`)
-      // Frontend bundle errors: a crashed React tree (settings card, ghost
-      // overlay) leaves no host log and is the fastest way to spot a UI break.
       console.error(`--- browser console errors (${consoleErrors.length}) ---`)
       for (const line of consoleErrors) console.error(line)
       console.error(`--- page errors (${pageErrors.length}) ---`)
       for (const line of pageErrors) console.error(line)
+      const hostLog = webLog.join('').split('\n').filter(Boolean)
+      console.error(`--- dsh web log tail (${hostLog.length} lines) ---\n${hostLog.slice(-80).join('\n')}`)
     })
     const apiKey = process.env.DEEPSEEK_API_KEY as string
 

@@ -219,10 +219,17 @@ export function apply(ctx: Context, config: Config): void {
   ctx.inject(['sessionProjections'], (projectionCtx) => {
     projectionCtx.sessionProjections.register<'suggestPrompt', SuggestPromptSuggestion | null>({
       key: 'suggestPrompt',
-      schema: suggestPromptProjectionSchema,
+      // dsh 0.1.1 projection contract: the persistable state schema is
+      // `stateSchema`, and the browser-visible view moves into the required
+      // `wire` sub-object. A unit without `wire` is host-only and never
+      // reaches the browser, so the ghost overlay would read null.
+      stateSchema: suggestPromptProjectionSchema,
       init: () => null,
       apply: applySuggestPromptProjection,
-      view: state => state,
+      wire: {
+        viewSchema: suggestPromptProjectionSchema,
+        view: state => state,
+      },
       stateVersion: 1,
     })
   })
