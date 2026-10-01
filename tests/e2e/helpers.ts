@@ -162,9 +162,17 @@ export async function setSuggestionModel(page: Page, provider: string, model: st
   await providerSelect.waitFor({ timeout: 10_000 })
   await providerSelect.selectOption(provider)
 
-  const modelSelect = settings.locator('#suggest-prompt-settings-model')
-  await modelSelect.waitFor({ timeout: 10_000 })
-  await modelSelect.selectOption(model)
+  // The model control is a <select> only when the provider's catalog lists
+  // explicit models; a provider without one (notably `deepseek-official` in a
+  // cold isolated $DSH_HOME) degrades to a free-text input. Type into whichever
+  // shape rendered instead of assuming the dropdown.
+  const modelControl = settings.locator('#suggest-prompt-settings-model')
+  await modelControl.waitFor({ timeout: 10_000 })
+  if (await modelControl.evaluate(el => el.tagName.toLowerCase()) === 'select') {
+    await modelControl.selectOption(model)
+  } else {
+    await modelControl.fill(model)
+  }
 
   await settings.getByRole('button', { name: '保存', exact: true }).click()
   // Saving does not close the settings dialog; click its header close button
