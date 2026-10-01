@@ -21,7 +21,7 @@
 
 - **默认轻量**：不配置 `provider` / `model` 时继承主请求最近一次记录的路由，无需为建议单独选模型；需要时也可显式指定任意路由（例如本地 OpenAI 兼容网关）。
 - **免思考、快速便宜**：建议生成默认携带 `reasoningEffort: off`（DeepSeek 序列化为 `thinking: disabled`），不消耗推理预算；模型不支持该参数时自动去掉并重试一次。
-- **界面配置模型路由**：日常只需在 WebUI「设置 → 插件」的「建议提示词」卡片里选择建议生成的 provider / model（或跟随会话路由），保存后下一完成回合生效，无需手动改配置文件；`~/.dsh/settings.yaml` 由界面代写。
+- **界面配置模型路由**：日常只需在 WebUI「设置 → 内置插件」的「建议提示词」标签页里选择建议生成的 provider / model（或跟随会话路由），保存后下一完成回合生效，无需手动改配置文件。
 - **只发最后一轮**：默认只把最后一轮的用户输入与 AI 最终回答发给建议模型（`maxRecentTurns` 默认为 `1`），中间的工具调用 / 推理过程一律不发送。
 - **有界调用**：字节 / 令牌 / 超时上限、转录长度预算、建议可见字符上限，全部可配置。
 - **安全**：转录在发送前脱敏（密钥形状被掩蔽）；输出净化（控制序列、围栏、引号剥离、单行化）并做语义过滤（元文本、评价套话、助手口吻等被当作「无建议」丢弃）。
@@ -84,13 +84,15 @@ dsh plugin --profile web add @studyzy/dsh-suggest-prompt
 
 ### 通过 WebUI 界面配置建议模型（日常）
 
-「设置 → 插件」会出现「建议提示词」卡片。这是**日常配置建议模型的主入口**，无需手动改配置文件：
+「设置 → 内置插件」的「建议提示词」标签页。这是**日常配置建议模型的主入口**，无需手动改配置文件：
 
 - **Provider / Model**：从已安装的 provider 目录（内置 `DeepSeek` 与 pi-ai 各 provider）中选择建议生成使用的路由；选择「跟随会话路由」则不覆盖，继承主请求路由。
-- **Accept shortcut**：点击输入框获得焦点后，直接按下想用的按键或组合键，按键即录制显示（先按 `Alt` 再按 `Slash` → `Alt+Slash`，`Ctrl+Alt+X` 显示为三个键），无需手动打字；保存后写入 `~/.dsh/settings.yaml`。
-- 编辑是暂存式的（带「未保存」标记与「放弃 / 保存」按钮），保存会由界面写入 `~/.dsh/settings.yaml` 的 `suggest-prompt` 小节；**保存后下一个完成回合生效**，无需重启。
+- **Accept shortcut**：点击输入框获得焦点后，直接按下想用的按键或组合键，按键即录制显示（先按 `Alt` 再按 `Slash` → `Alt+Slash`，`Ctrl+Alt+X` 显示为三个键），无需手动打字。
+- 编辑是暂存式的（带「未保存」标记与「放弃 / 保存」按钮），保存会由界面写入当前 profile 的 `suggest-prompt` entry；**保存后下一个完成回合生效**，无需重启。
 - 下拉只会列出目录中显式声明的模型；某 provider 未声明模型列表时，模型字段退化为自由文本输入。
-- 依赖 `dsh-settings` 的设置能力：没有挂载设置服务的组装（如 headless）不显示此卡片，此时仍可在补丁层配置 `provider` / `model` / `acceptKey`。
+- 依赖 harness 的设置能力：没有挂载设置服务的组装（如 headless）不显示此标签页，此时仍可在补丁层配置 `provider` / `model` / `acceptKey`。
+
+只有当宿主能描述该 entry 时标签页才会出现，这要求设置字段在插件 `Config` schema 中标记 `volatile()`（见 [AGENTS.md](AGENTS.md) 的「Version-critical contracts」）。同一标记也让这些值以**活引用**而非普通值传入插件，因此 `resolveSuggestPromptConfig` 会在配置边界统一解包。
 
 ![建议提示词设置卡片](assets/config.png)
 
@@ -115,8 +117,11 @@ dsh plugin --profile web add @studyzy/dsh-suggest-prompt
 
 - 宿主在 `turn/end`（reason=`completed`）时触发生成；按会话 + 回合去重，下一个完成回合会中止上一个在途生成。
 - 建议写入会话日志的 `suggest-prompt/suggested` 事件，`suggestPrompt` 投影把它暴露给 Web 端。
-- 幽灵文字只在满足以下条件时显示：建议对应**最新**完成回合、agent 空闲、草稿为空；键入即隐藏，删回空草稿重新显示。
-- 按 `acceptKey`（默认 Tab）把建议填入草稿（可编辑后再发送）；焦点不在输入框或处于 IME 组合输入时不触发，Tab 也只在显示幽灵文字时才被拦截（否则保持默认焦点行为）。
+- 喂给辅助调用的对话记录由**仅宿主端**的 `suggestPromptTranscript` 投影从已提交事件增量折叠而来，而不再扫描会话历史：`dsh >= 0.2.0` 禁止新生产代码同步读取历史事件。该折叠同时约束内存，只保留最近约 4 个回合。
+- 幽灵文字在 agent 空闲且草稿为空时显示；键入即隐藏，删回空草稿重新显示。`dsh >= 0.2.0` 移除了客户端的 `turnEnds` 映射，因此新鲜度改由空闲标志判断，而非本地比对完成回合。
+- 显示建议时，输入框的原生占位文字会被隐藏（用 `visibility`，不引起重排）；否则两者会绘制在同一文字起点上，谁都看不清。
+- 按 `acceptKey`（默认 Tab）把建议填入草稿（可编辑后再发送）；焦点不在输入框或处于 IME 组合输入时不触发，快捷键也只在显示幽灵文字时才被拦截（否则 Tab 保持默认焦点行为）。
+- `dsh >= 0.2.0` 的输入框是 Lexical 的 `contenteditable` 宿主而非 `<textarea>`；采纳路径同时兼容两种形态，因此快捷键在任一形态下都可用。
 
 ## 模型体验
 
@@ -183,7 +188,7 @@ An automatic "next line" companion: after the AI answers, it predicts what you'd
 
 - **Lightweight by default**: without `provider` / `model` the suggestion inherits the route of the most recently logged main request — no model to pick just for suggestions; set them explicitly to route anywhere (for example a local OpenAI-compatible gateway).
 - **No thinking, fast and cheap**: the auxiliary call carries `reasoningEffort: off` by default (DeepSeek serializes it as `thinking: disabled`) so no budget is spent on a chain of thought; models that reject `off` retry once without the field.
-- **Route configured in the WebUI**: day-to-day, pick the suggestion provider/model from the "建议提示词" card under Settings → Plugins (or keep "follow session route"); saving takes effect on the next completed turn — no manual config-file edits. `~/.dsh/settings.yaml` is written by the UI for you.
+- **Route configured in the WebUI**: day-to-day, pick the suggestion provider/model from the "建议提示词" tab under Settings → Built-in plugins (or keep "follow session route"); saving takes effect on the next completed turn — no manual config-file edits.
 - **Last turn only**: by default only the last completed turn's user input and assistant final answer are sent to the suggestion model (`maxRecentTurns` defaults to `1`); intermediate tool calls / reasoning are never included.
 - **Bounded**: byte / token / timeout caps, a transcript budget, and a visible-character cap on the suggestion — all configurable.
 - **Safe**: transcripts are secret-redacted before framing; output is sanitized (control sequences, fences, quotes stripped, single line) and semantically filtered (meta-text, evaluative filler, assistant-voice phrasing are dropped as "no suggestion").
@@ -246,13 +251,15 @@ Configuration is split in two: the **day-to-day route is set in the UI**, and th
 
 ### Configure the suggestion model in the WebUI (day-to-day)
 
-A "建议提示词" card appears under Settings → Plugins. This is the **primary entry point** for choosing the suggestion route — no manual config-file edits:
+A "建议提示词" card appears under **Settings → Built-in plugins (内置插件)**. This is the **primary entry point** for choosing the suggestion route — no manual config-file edits:
 
 - **Provider / Model**: pick the route the auxiliary call uses from the installed provider catalog (built-in DeepSeek + pi-ai routes); choosing "Follow session route" keeps the main request route.
 - **Accept shortcut**: focus the field, then press the key or key combo you want — the pressed keys are recorded and shown (press `Alt` then `Slash` → `Alt+Slash`; a three-key combo like `Ctrl+Alt+X` displays as three keys), no typing needed.
-- Edits are staged (with an "Unsaved" marker and Discard / Save buttons); saving writes the `suggest-prompt` section of `~/.dsh/settings.yaml` for you, and **takes effect on the next completed turn** — no restart needed.
+- Edits are staged (with an "Unsaved" marker and Discard / Save buttons); saving writes the `suggest-prompt` entry of the active profile, and **takes effect on the next completed turn** — no restart needed.
 - The dropdowns list only explicitly declared models; a provider without a declared model list degrades the model field to free-text input.
-- This rides the `dsh-settings` capability: assemblies without a settings service (e.g. headless) do not show the card and keep using `provider` / `model` / `acceptKey` in the patch layer.
+- This rides the harness settings capability: assemblies without a settings service (e.g. headless) do not show the card and keep using `provider` / `model` / `acceptKey` in the patch layer.
+
+The card is only discoverable when the host can describe the entry, which requires the settings-facing fields to be marked `volatile()` in the plugin's `Config` schema (see [AGENTS.md](AGENTS.md), "Version-critical contracts"). That marking is also what makes those values arrive as live references rather than plain values, so `resolveSuggestPromptConfig` unwraps them at the config boundary.
 
 ![Suggestion prompt settings card](assets/config.png)
 
@@ -277,8 +284,11 @@ The following are provided with defaults by the bundle's own `cordis.patch.yml` 
 
 - The host triggers generation on `turn/end` (reason `completed`), deduplicated per session and turn; the next completed turn aborts the in-flight generation.
 - The suggestion is appended to the session log as the `suggest-prompt/suggested` event, and the `suggestPrompt` projection exposes it to the web side.
-- The ghost text shows only when the suggestion answers the **latest** completed turn, the agent is idle, and the draft is empty; typing hides it, deleting back to an empty draft re-shows it.
-- Pressing `acceptKey` (default Tab) fills the draft (editable, not sent). It is ignored while focus is outside the composer or during IME composition; Tab is intercepted only while ghost text is displayed (otherwise it keeps its default focus behavior).
+- The transcript fed to the auxiliary call is maintained as a host-only `suggestPromptTranscript` projection folded from committed events, rather than by scanning session history: `dsh >= 0.2.0` deprecates synchronous history reads for new production callers. The fold also bounds memory, keeping roughly the last four turns.
+- The ghost text shows while the agent is idle and the draft is empty; typing hides it, deleting back to an empty draft re-shows it. `dsh >= 0.2.0` removed the client's `turnEnds` map, so freshness comes from the idle flag rather than a local completed-turn comparison.
+- While a suggestion is displayed, the composer's native placeholder is hidden (via `visibility`, so nothing reflows) — otherwise the two would paint on the same text origin and neither would be readable.
+- Pressing `acceptKey` (default Tab) fills the draft (editable, not sent). It is ignored while focus is outside the composer or during IME composition; the shortcut is intercepted only while ghost text is displayed (otherwise Tab keeps its default focus behavior).
+- The composer is a Lexical `contenteditable` host in `dsh >= 0.2.0`, not a `<textarea>`; the accept path detects focus across both shapes so the shortcut works on either.
 
 ## Model Experience
 
