@@ -138,6 +138,9 @@ export function runDSHPlugin(profile: string, args: readonly string[], cwd: stri
  *
  * The card's own field ids (`#suggest-prompt-settings-provider` / `-model`) are
  * unchanged, so only the navigation differs.
+ *
+ * The card itself still renders collapsed (a disclosure header with
+ * `aria-expanded`), so its fields only exist after the header is clicked.
  */
 export async function setSuggestionModel(page: Page, provider: string, model: string): Promise<void> {
   await page.getByRole('button', { name: '设置', exact: true }).click()
@@ -149,6 +152,11 @@ export async function setSuggestionModel(page: Page, provider: string, model: st
   const tab = settings.getByRole('tab', { name: '建议提示词' })
   await tab.waitFor({ timeout: 10_000 })
   await tab.click()
+
+  // The card mounts collapsed; expand it so the route fields render at all.
+  const header = settings.getByRole('button', { name: '展开: 建议提示词' })
+  await header.waitFor({ timeout: 10_000 })
+  await header.click()
 
   const providerSelect = settings.locator('#suggest-prompt-settings-provider')
   await providerSelect.waitFor({ timeout: 10_000 })
