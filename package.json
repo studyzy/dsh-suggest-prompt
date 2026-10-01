@@ -78,7 +78,7 @@
     "react": "^18.2.0"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "^3.18.1",
+    "@deepseek-ai/schemastery": "^3.18.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {

@@ -126,18 +126,42 @@ export interface Config {
   readonly acceptKey?: string
 }
 
-/** Loader schema: every bound is required and provider/model pair optionally overrides the logged route. */
-export const Config: z<Config> = z.object({
+/**
+ * Loader schema for the deployment policy.
+ *
+ * `dsh >= 0.2.0` derives a plugin's settings form from this schema, and a field
+ * appears there only when it is marked `volatile()`. That marking is what makes
+ * the entry describable at all: with no volatile field the host omits the entry
+ * from `settings.describe`, so the WebUI card would mount and then render
+ * nothing. Only the three user-editable preferences are volatile — the
+ * deployment bounds stay ordinary configuration, so the generated form does not
+ * invite edits to them.
+ *
+ * The schema is declared separately from {@link Config} because `volatile()`
+ * brands its output (`Volatile<T>`), which would otherwise leak that brand into
+ * every consumer of the runtime policy type. `Config` stays the plain shape the
+ * plugin actually reads.
+ *
+ * Requires `@deepseek-ai/schemastery >= 3.18.3`, the first release with
+ * `volatile()`.
+ */
+const ConfigSchema = z.object({
   maxInputBytes: z.number().step(1).min(1).required(),
   maxOutputTokens: z.number().step(1).min(1).required(),
   timeoutMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).required(),
   maxRecentTurns: z.number().step(1).min(1).default(1),
   maxTranscriptChars: z.number().step(1).min(1).required(),
   maxSuggestionChars: z.number().step(1).min(1).required(),
-  provider: z.string(),
-  model: z.string(),
-  acceptKey: z.string().default('Tab'),
+  provider: z.string().volatile(),
+  model: z.string().volatile(),
+  acceptKey: z.string().default('Tab').volatile(),
 })
+
+/**
+ * Exported loader schema. Cast to the runtime shape: `volatile()` only affects
+ * how the settings form projects the field, not the value the plugin receives.
+ */
+export const Config = ConfigSchema as unknown as z<Config>
 
 /** Cordis plugin identity. */
 export const name = 'suggest-prompt'

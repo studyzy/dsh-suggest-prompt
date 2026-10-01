@@ -66,6 +66,42 @@ function assertPositiveInteger(name: string, value: number): void {
 }
 
 /**
+ * Read one configuration field as plain data.
+ *
+ * `dsh >= 0.2.0` settings expose a `volatile()`-marked field as a live
+ * reference (`{ get(), set() }`) rather than the value itself, so the loader
+ * hands this plugin reference objects for exactly the fields the settings form
+ * may edit live. Everything downstream wants plain JSON, so unwrap here — at
+ * the one boundary where untrusted config enters — rather than at each read.
+ * A non-reference value passes through unchanged, which keeps the plugin usable
+ * with a plain config object (tests, direct composition).
+ * @param value - a config field, possibly a volatile reference.
+ * @returns the plain value.
+ */
+function readConfigField(value: unknown): unknown {
+  if (value !== null && typeof value === 'object' && typeof (value as { get?: unknown }).get === 'function') {
+    return (value as { get(): unknown }).get()
+  }
+  return value
+}
+
+/**
+ * Unwrap every volatile reference in a config object, dropping `undefined`
+ * fields so an absent optional stays absent rather than becoming an explicit
+ * undefined key.
+ * @param config - the raw plugin config.
+ * @returns a plain object of resolved values.
+ */
+function unwrapVolatileFields(config: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [key, raw] of Object.entries(config)) {
+    const value = readConfigField(raw)
+    if (value !== undefined) out[key] = value
+  }
+  return out
+}
+
+/**
  * Validate and detach the required suggestion policy.
  * @param config - untrusted plugin configuration.
  * @returns immutable policy with optional route absence preserved.
@@ -75,7 +111,7 @@ export function resolveSuggestPromptConfig(config: Config): ResolvedSuggestPromp
   if (candidate === null || typeof candidate !== 'object') {
     throw new Error('suggest-prompt: configuration is required')
   }
-  const value = candidate as Config
+  const value = unwrapVolatileFields(candidate as Record<string, unknown>) as unknown as Config
   for (const key of Object.keys(value)) {
     if (!CONFIG_KEYS.has(key)) throw new Error(`suggest-prompt: unknown config key "${key}"`)
   }

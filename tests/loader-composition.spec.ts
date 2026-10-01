@@ -11,6 +11,40 @@ import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import * as suggestPromptPlugin from '@studyzy/dsh-suggest-prompt'
+import { Config } from '@studyzy/dsh-suggest-prompt'
+
+/**
+ * Mirror the host's `volatileForm()` projection: walk a schema and report the
+ * field paths whose node is marked volatile. `dsh >= 0.2.0` derives a plugin's
+ * settings page from the schema, and an entry with no volatile field is omitted
+ * from `settings.describe` entirely — which makes the WebUI card mount and then
+ * render nothing.
+ * @param schema - a schemastery node.
+ * @returns volatile field paths (a wholly volatile node reports its own key).
+ */
+function volatileFieldPaths(schema: { meta?: { volatile?: boolean }; type?: string; dict?: Record<string, unknown> }): string[] {
+  if (schema.meta?.volatile === true) return ['<node>']
+  if (schema.type !== 'object') return []
+  return Object.entries(schema.dict ?? {}).flatMap(([key, child]) => volatileFieldPaths(child as never)
+    .map(path => (path === '<node>' ? key : `${key}.${path}`)))
+}
+
+describe('suggest-prompt settings schema', () => {
+  it('marks the user-editable preferences volatile so the host describes the entry', () => {
+    // Without this, the settings card is unreachable: the host omits an entry
+    // with no volatile field from the describe answer the client reads.
+    expect(volatileFieldPaths(Config as never).sort()).toEqual(['acceptKey', 'model', 'provider'])
+  })
+
+  it('keeps the deployment bounds out of the generated settings form', () => {
+    // The numeric bounds are composition policy, not user preferences; they must
+    // not become editable form fields.
+    const paths = volatileFieldPaths(Config as never)
+    for (const bound of ['maxInputBytes', 'maxOutputTokens', 'timeoutMs', 'maxRecentTurns', 'maxTranscriptChars', 'maxSuggestionChars']) {
+      expect(paths).not.toContain(bound)
+    }
+  })
+})
 
 let root: string | undefined
 let context: Context | undefined

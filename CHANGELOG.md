@@ -53,6 +53,8 @@ older harness: the plugin now requires `dsh >= 0.2.0-rc.2` and will not load on
   of pre-existing sessions used the now-deprecated synchronous history reader.
 - Dropped the now-unused `@deepseek-ai/dsh-settings` and
   `@deepseek-ai/dsh-client-ui-settings-plugins` dependencies.
+- Requires `@deepseek-ai/schemastery >= 3.18.3` (was `^3.18.1`), the first
+  release exposing `volatile()`, which the settings form requires.
 - The e2e suites target the rc.2 composer (`contenteditable` + `[data-input-scroll]`)
   and the Built-in plugins settings tab, and additionally assert the two fixes
   below.
@@ -61,6 +63,13 @@ older harness: the plugin now requires `dsh >= 0.2.0-rc.2` and will not load on
 
 ### Fixed
 
+- **The settings card never rendered.** The host derives a plugin's settings page
+  from its `Config` schema but only surfaces fields marked `volatile()`. With no
+  volatile field the entry is omitted from `settings.describe` entirely, so the
+  card mounted and then rendered nothing, with no error anywhere. The three
+  user-editable preferences are now volatile. A volatile field arrives as a live
+  reference (`{ get(), set() }`) rather than a value, so
+  `resolveSuggestPromptConfig` unwraps every field at the config boundary.
 - **Duplicate ghost text.** The composer's native placeholder is a real element
   (`[data-composer-placeholder]`) in `dsh >= 0.2.0`, not a `textarea::placeholder`
   pseudo-element. The old rule never matched, so the built-in placeholder and the

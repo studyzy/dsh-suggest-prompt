@@ -156,6 +156,39 @@ describe('resolveSuggestPromptConfig', () => {
     expect(Object.isFrozen(resolved)).toBe(true)
   })
 
+  // `dsh >= 0.2.0` hands the plugin a live reference ({ get(), set() }) for every
+  // `volatile()`-marked field, because those are the fields the settings form may
+  // edit. Reading one as a plain value would silently produce "[object Object]"
+  // (or fail validation), so the unwrap is load-bearing.
+  it('unwraps volatile field references into plain values', () => {
+    const resolved = resolveSuggestPromptConfig({
+      ...CONFIG,
+      provider: { get: () => 'acme', set: () => {} },
+      model: { get: () => 'acme-1', set: () => {} },
+      acceptKey: { get: () => 'Alt+Slash', set: () => {} },
+    } as never)
+    expect(resolved.provider).toBe('acme')
+    expect(resolved.model).toBe('acme-1')
+    expect(resolved.acceptKey).toBe('Alt+Slash')
+  })
+
+  it('treats an absent volatile reference as an absent override', () => {
+    // A volatile field with no configured value resolves to undefined; it must
+    // not become an explicit undefined key that survives into the policy.
+    const resolved = resolveSuggestPromptConfig({
+      ...CONFIG,
+      provider: { get: () => undefined, set: () => {} },
+    } as never)
+    expect('provider' in resolved).toBe(false)
+  })
+
+  it('rejects a volatile reference whose live value is invalid', () => {
+    expect(() => resolveSuggestPromptConfig({
+      ...CONFIG,
+      provider: { get: () => '', set: () => {} },
+    } as never)).toThrow(/provider override must be a non-empty string/)
+  })
+
   it('rejects a non-object, unknown keys, invalid bounds, and empty route overrides', () => {
     expect(() => resolveSuggestPromptConfig(null as never)).toThrow(/configuration is required/)
     expect(() => resolveSuggestPromptConfig({ ...CONFIG, bogus: 1 } as never)).toThrow(/unknown config key/)
