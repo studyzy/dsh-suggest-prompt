@@ -27,7 +27,8 @@ import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import {
-  probeFreePort, resolvePnpmBinDir, runDSHPlugin, saveFailureShot, setSuggestionModel, waitForReadyLine,
+  composerEditor, probeFreePort, resolvePnpmBinDir, runDSHPlugin, saveFailureShot,
+  setSuggestionModel, waitForReadyLine,
 } from './helpers.ts'
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url))
@@ -95,15 +96,17 @@ describe.skipIf(homedir() === '' && !process.env.DSH_HOME)(
       // steps, so the main frame appears directly. No workspace pick either:
       // the local profile already has one connected, so the composer is live.
       await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-      const input = page.locator('textarea:enabled').first()
+      const input = composerEditor(page).first()
       await input.waitFor({ timeout: 20_000 })
 
       // Route the suggestion model to DeepSeek Flash (ccr / hai/DeepSeek-V4-Flash).
       await setSuggestionModel(page, LOCAL_PROVIDER, LOCAL_FLASH_MODEL)
 
       // Ask a math question; the local agent-default-model answers with real API.
-      await input.fill('出一道小学数学题给我')
-      await input.press('Enter')
+      // A contenteditable host has no `.fill()`; type into it and submit.
+      await input.click()
+      await page.keyboard.type('出一道小学数学题给我')
+      await page.keyboard.press('Enter')
 
       // The ghost suggestion renders only after the turn completes (agent idle)
       // and the suggestion generation returns.

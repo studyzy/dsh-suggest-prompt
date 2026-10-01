@@ -5,20 +5,19 @@
  * conversation.input.overlay with the suggest-prompt id, and the registration
  * drops when the plugin fiber unloads (HMR safety).
  *
- * The npm `@deepseek-ai/dsh-client-runtime` package ships only the browser
- * bundle (bootstrapped through window.__ModuleLoader__), which jsdom cannot
- * import; the stand-in below mirrors the SlotRegistry surface the plugin uses
- * and the snapshot-store face `createSnapshotStore` provides.
+ * The published client bundles bootstrap through `window.__ModuleLoader__`,
+ * which jsdom cannot provide. Rather than resolving the whole primitives UI-kit
+ * dependency graph, the heavier chain is cut at its module edges: the store
+ * engine the plugin builds on, and the settings card (whose only relevance here
+ * is its place in the Plugins tab roster).
  */
 import { Context, Service } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import { apply, inject } from '../src/browser/index.ts'
+import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 
-// The published runtime bundle bootstraps through window.__ModuleLoader__, which
-// jsdom does not provide; stub the value imports the plugin chain uses so the
-// tests keep working against the host's bundled output.
-vi.mock('@deepseek-ai/dsh-client-runtime/client', () => ({
+// The store engine arrives through the browser module table; jsdom has no
+// `window.__ModuleLoader__`, so stub the one value import the plugin uses.
+vi.mock('@deepseek-ai/dsh-client-store', () => ({
   createSnapshotStore: (init: unknown): SnapshotStore<unknown> => {
     let state = init
     const listeners = new Set<() => void>()
@@ -30,6 +29,12 @@ vi.mock('@deepseek-ai/dsh-client-runtime/client', () => ({
     }
   },
 }))
+
+// The card renders the primitives UI kit, a large dependency graph jsdom cannot
+// import; this suite asserts slot registration only, so the card is inert.
+vi.mock('../src/browser/SettingsCard.tsx', () => ({ SettingsCard: () => null }))
+
+import { apply, inject } from '../src/browser/index.ts'
 
 /** Slot-map declaration: which list slot keys are known and their scope. */
 type SlotSpec = { kind: 'list'; scope: 'root' | 'session' }

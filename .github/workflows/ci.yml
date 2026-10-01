@@ -42,11 +42,19 @@ jobs:
 
   # Browser e2e against a REAL `dsh web` (isolated $DSH_HOME): installs the
   # bundle via `dsh plugin add`, drives the WebUI with Playwright, and checks
-  # that a ghost next-prompt suggestion appears after a real model round.
-  # Needs a DEEPSEEK_API_KEY secret on the repository.
+  # that a ghost next-prompt suggestion appears after a real model round — plus
+  # that the native placeholder is hidden (no double ghost text) and that Tab
+  # adopts the suggestion.
+  #
+  # continue-on-error: this lane needs the DEEPSEEK_API_KEY secret and a live
+  # model round-trip, so it can fail for reasons outside a PR's control (quota,
+  # upstream latency, harness UI churn). It is a signal, not a gate; the `build`
+  # job is the gate. Flip this to false once the lane has been green on `main`
+  # for a while.
   e2e:
     runs-on: ubuntu-latest
     needs: build
+    continue-on-error: true
     # Reads the DEEPSEEK_API_KEY secret stored under this GitHub Environment.
     # (The secret lives in the `DEEPSEEK_API_KEY` environment, not at repo
     # scope, so the job must opt into that environment to see it.)
@@ -69,10 +77,11 @@ jobs:
       - name: Build the plugin
         run: pnpm build
 
-      # dsh manages a profile's plugins with `pnpm` from PATH, and pnpm 9
-      # rejects `pnpm add` to a workspace root — so expose pnpm ≥10 for the
-      # spawned `dsh web` install step (the test's resolvePnpmBinDir detects it
-      # on PATH and skips its corepack fallback).
+      # `dsh` manages a profile's plugins with the `pnpm` on PATH. The
+      # repo's own `packageManager` is pnpm 9, which rejects `pnpm add` to a
+      # workspace root, so expose pnpm ≥10 for the spawned `dsh web` install step
+      # (the test's resolvePnpmBinDir detects it on PATH and skips its corepack
+      # fallback).
       #
       # Use corepack (ships with Node) to activate pnpm@10 as the `pnpm` on
       # PATH. `npm install -g pnpm@10` alone is unreliable here: setup-node
@@ -84,8 +93,10 @@ jobs:
           corepack prepare pnpm@10 --activate
           pnpm --version
 
-      # The latest dsh (rc.8 on the `next` tag) ships the web app dist and
-      # manages profile plugins with its own pnpm.
+      # `@next` currently resolves to 0.2.0-rc.2, the harness release this
+      # plugin is adapted to (see AGENTS.md, "Version-critical contracts").
+      # Keep this in step with the pinned @deepseek-ai/* ranges: the composer and
+      # settings-surface selectors in tests/e2e move with the harness release.
       - name: Install latest dsh
         run: npm i -g @deepseek-ai/dsh@next
 

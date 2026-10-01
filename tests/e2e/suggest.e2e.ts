@@ -7,14 +7,21 @@
  *   3.  `dsh web --port <free> --no-open` is spawned against that home;
  *   4.  Playwright drives the WebUI: walks the first-run onboarding to store
  *       the DeepSeek key, connects a workspace, sets the suggestion model to
- *       DeepSeek Flash in the "建议提示词" settings card, then sends a math
- *       question and asserts a ghost next-prompt suggestion appears in the
- *       composer after the agent finishes.
+ *       DeepSeek Flash in the "建议提示词" tab of the Built-in plugins settings
+ *       section, then sends a math question and asserts that a ghost next-prompt
+ *       suggestion appears in the composer after the agent finishes.
+ *   5.  It then asserts the two composer regressions stay fixed: the native
+ *       placeholder is hidden while a suggestion shows (no double ghost text),
+ *       and Tab adopts the suggestion into the draft.
  *
  * The `DEEPSEEK_API_KEY` env var is used both to gate the suite
  * (`skipIf(!DEEPSEEK_API_KEY)`) and as the value typed into the onboarding
  * dialog — it is deliberately NOT forwarded to the spawned `dsh web`, so the
  * first-run credential step mounts and we exercise the real UI path.
+ *
+ * Targets `dsh >= 0.2.0-rc.2`, whose composer is a Lexical `contenteditable`
+ * host (not a `<textarea>`) and whose plugin settings surface is a
+ * `settings.plugins.tab` seat (not an expandable `settings.plugin.item` card).
  *
  * Run: `pnpm test:e2e` (requires a real DEEPSEEK_API_KEY; skipped otherwise).
  * Excluded from the default `pnpm test` via vitest.e2e.config.ts.
@@ -28,7 +35,7 @@ import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import {
-  probeFreePort, resolvePnpmBinDir, saveFailureShot, setSuggestionModel, waitForReadyLine,
+  composerEditor, probeFreePort, resolvePnpmBinDir, saveFailureShot, setSuggestionModel, waitForReadyLine,
 } from './helpers.ts'
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url))
@@ -68,10 +75,10 @@ async function connectWorkspace(page: Page, root: string, name = 'workspace'): P
   await pathInput.fill(join(root, name))
   await pathInput.press('Enter')
   await dialog.getByRole('button', { name: '打开', exact: true }).click()
-  // The pick connects the workspace: the inert trigger textarea becomes a live
-  // composer (placeholder changes to the default "描述你想要构建的内容").
-  await page.locator('textarea:enabled[placeholder="描述你想要构建的内容"]')
-    .waitFor({ timeout: 15_000 })
+  // The pick connects the workspace: the inert workspace-trigger becomes a live
+  // composer editor. `dsh >= 0.2.0` renders a contenteditable host rather than a
+  // textarea, so the editor layer's own marker identifies it.
+  await composerEditor(page).waitFor({ timeout: 15_000 })
 }
 
 describe.skipIf(!process.env.DEEPSEEK_API_KEY)('suggest-prompt browser e2e (real dsh CLI)', () => {
@@ -174,10 +181,10 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('suggest-prompt browser e2e (real
     // First-run onboarding: store the DeepSeek key through the UI.
     await configureKeyThroughOnboarding(page, apiKey)
 
-    // Connect a workspace so the composer unlocks (the inert textarea is a
-    // workspace trigger until a real workspace is picked).
+    // Connect a workspace so the composer unlocks (before a pick, the composer is
+    // an inert workspace trigger).
     await connectWorkspace(page, home)
-    const input = page.locator('textarea:enabled[placeholder="描述你想要构建的内容"]')
+    const input = composerEditor(page)
     await input.waitFor({ timeout: 15_000 })
 
     // Route the suggestion model to DeepSeek Flash (deepseek-v4-flash).
@@ -185,8 +192,10 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('suggest-prompt browser e2e (real
 
     // Ask a math question. The base layer's default agent model is already
     // deepseek-official/deepseek-v4-flash, so the agent answers with real API.
-    await input.fill('出一道小学数学题给我')
-    await input.press('Enter')
+    // A contenteditable host has no `.fill()`; type into it and submit.
+    await input.click()
+    await page.keyboard.type('出一道小学数学题给我')
+    await page.keyboard.press('Enter')
 
     // The ghost suggestion renders only after the turn completes (agent idle)
     // and the suggestion generation returns. `[data-suggest-prompt-ghost]` is
@@ -195,6 +204,27 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('suggest-prompt browser e2e (real
     await ghost.waitFor({ timeout: 180_000 })
     const text = await ghost.textContent()
     expect(text?.trim().length).toBeGreaterThan(0)
+
+    // The native placeholder must NOT be visible underneath the ghost: painting
+    // both on the same text origin is the duplicate-ghost regression this
+    // suite guards (`dsh >= 0.2.0` renders the placeholder as a real element,
+    // so hiding it is a CSS rule rather than a ::placeholder pseudo-element).
+    // Asserted with a plain visibility read rather than a matcher, since this
+    // suite's `expect` is vitest's, not @playwright/test's.
+    const placeholder = page.locator('[data-composer-card] [data-composer-placeholder]')
+    if (await placeholder.count() > 0) {
+      expect(await placeholder.first().isVisible()).toBe(false)
+    }
+
+    // Tab adopts the suggestion into the draft. This is the accept-path
+    // regression guard: focus detection must recognize the contenteditable
+    // composer, not only a textarea.
+    await input.click()
+    await page.keyboard.press('Tab')
+    await expect
+      .poll(async () => (await input.textContent())?.trim() ?? '', { timeout: 10_000 })
+      .toContain(text?.trim() ?? '\u0000')
+
     expect(pageErrors).toEqual([])
   }, 240_000)
 })

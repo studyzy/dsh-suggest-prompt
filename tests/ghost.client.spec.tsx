@@ -28,15 +28,11 @@ const SUGGESTION: NonNullable<SuggestPromptProjection> = {
 
 function kit(over: {
   running?: boolean
-  turnEnds?: ReadonlyMap<number, number>
   draft?: string
   projection?: SuggestPromptProjection | undefined
 } = {}) {
   const setDraft = vi.fn()
-  const session = {
-    running: over.running ?? false,
-    turnEnds: over.turnEnds ?? new Map([[3, 30]]),
-  }
+  const session = { running: over.running ?? false }
   const props = {
     sessionId: SID,
     useSession: (selector: (s: ConversationSnapshot) => unknown) => selector(session as ConversationSnapshot),
@@ -65,6 +61,25 @@ function focusedTextarea(): HTMLTextAreaElement {
   return textarea
 }
 
+/**
+ * Build the `dsh >= 0.2.0` composer shape and focus its editable host: a
+ * `[data-input-scroll]` layer wrapping a Lexical `contenteditable` div. The
+ * composer is no longer a `<textarea>`, which is exactly what the accept path
+ * must tolerate.
+ * @returns the focused contenteditable host element.
+ */
+function focusedContentEditable(): HTMLElement {
+  const scroll = document.createElement('div')
+  scroll.setAttribute('data-input-scroll', '')
+  const host = document.createElement('div')
+  host.setAttribute('contenteditable', 'true')
+  host.tabIndex = 0
+  scroll.appendChild(host)
+  document.body.appendChild(scroll)
+  host.focus()
+  return host
+}
+
 /** Dispatch a keydown on the window and return the (cancelable) event. */
 function press(init: KeyboardEventInit): KeyboardEvent {
   const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })
@@ -91,18 +106,20 @@ describe('GhostSuggestion bridge', () => {
     expect(ghostLayer()).toBeNull()
   })
 
-  it('renders nothing when the suggestion answers an older completed turn', () => {
-    const { props } = kit({ projection: SUGGESTION, turnEnds: new Map([[5, 50]]) })
+  it('renders nothing once a new turn starts, so stale text never outlives its turn', () => {
+    // rc.2 removed the client's `turnEnds` map, so freshness is derived from the
+    // running flag: a suggestion is current only while the agent is idle.
+    const { props } = kit({ projection: SUGGESTION, running: true })
     render(<GhostSuggestion {...props} />)
     expect(ghostLayer()).toBeNull()
   })
 
-  it('matches the suggestion against the latest of multiple completed turns', () => {
-    const { props } = kit({
-      projection: { ...SUGGESTION, turn: 5 },
-      turnEnds: new Map([[3, 30], [5, 50]]),
-    })
-    render(<GhostSuggestion {...props} />)
+  it('re-shows the persisted suggestion when the draft is cleared again', () => {
+    const { props } = kit({ projection: SUGGESTION, draft: '在输入' })
+    const view = render(<GhostSuggestion {...props} />)
+    expect(ghostLayer()).toBeNull()
+    const { props: cleared } = kit({ projection: SUGGESTION })
+    view.rerender(<GhostSuggestion {...cleared} />)
     expect(ghostText()).toBe('继续修复登录页')
   })
 
@@ -183,6 +200,35 @@ describe('GhostSuggestion bridge', () => {
     textarea.remove()
   })
 
+  // `dsh >= 0.2.0` replaced the composer `<textarea>` with a Lexical
+  // `contenteditable` host. An `instanceof HTMLTextAreaElement` focus test made
+  // Tab silently do nothing on a current build, so both shapes must accept.
+  it('Tab fills the draft when the contenteditable composer host holds focus', () => {
+    const { setDraft, props } = kit({ projection: SUGGESTION })
+    render(<GhostSuggestion {...props} />)
+    const host = focusedContentEditable()
+    let event: KeyboardEvent | undefined
+    act(() => {
+      event = press({ key: 'Tab', code: 'Tab' })
+    })
+    expect(event?.defaultPrevented).toBe(true)
+    expect(setDraft).toHaveBeenCalledWith('继续修复登录页')
+    host.parentElement?.remove()
+  })
+
+  it('Tab is ignored when focus sits outside the composer', () => {
+    const { setDraft, props } = kit({ projection: SUGGESTION })
+    render(<GhostSuggestion {...props} />)
+    // A plain focusable element that is not part of the composer editor.
+    const outside = document.createElement('button')
+    document.body.appendChild(outside)
+    outside.focus()
+    const event = press({ key: 'Tab', code: 'Tab' })
+    expect(event.defaultPrevented).toBe(false)
+    expect(setDraft).not.toHaveBeenCalled()
+    outside.remove()
+  })
+
   it('a malformed configured shortcut falls back to the default Tab', () => {
     const { setDraft, props } = kit({ projection: { ...SUGGESTION, acceptKey: 'Bogus+Key' } })
     render(<GhostSuggestion {...props} />)
@@ -203,5 +249,34 @@ describe('GhostSuggestion bridge', () => {
     })
     expect(setDraft).not.toHaveBeenCalled()
     textarea.remove()
+  })
+})
+
+describe('GhostSuggestion placeholder handling', () => {
+  /** The injected style tag's text, or '' when the plugin is not mounted. */
+  function injectedCss(): string {
+    return document.getElementById('dsh-suggest-prompt-style')?.textContent ?? ''
+  }
+
+  it('hides the native placeholder element while a ghost is visible', () => {
+    const { props } = kit({ projection: SUGGESTION })
+    render(<GhostSuggestion {...props} />)
+    const css = injectedCss()
+    // `dsh >= 0.2.0` renders the composer placeholder as a real element
+    // ([data-composer-placeholder]); the old textarea pseudo-element rule is
+    // kept only as a fallback for older assemblies.
+    expect(css).toContain('[data-composer-placeholder]')
+    expect(css).toContain('[data-composer-card]:has(.dsh-suggest-prompt-ghost)')
+    // Hiding must preserve the box (an absolutely positioned sibling) so the
+    // composer height does not jump when a suggestion appears or is accepted.
+    expect(css).toMatch(/\[data-composer-placeholder\]\s*\{\s*visibility:\s*hidden/)
+  })
+
+  it('removes the style tag once the last ghost unmounts', () => {
+    const { props } = kit({ projection: SUGGESTION })
+    render(<GhostSuggestion {...props} />)
+    expect(injectedCss()).not.toBe('')
+    cleanup()
+    expect(document.getElementById('dsh-suggest-prompt-style')).toBeNull()
   })
 })

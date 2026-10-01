@@ -9,7 +9,22 @@ import { createServer } from 'node:net'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { Page } from 'playwright'
+import type { Locator, Page } from 'playwright'
+
+/**
+ * The composer's editable surface, once a workspace has unlocked it.
+ *
+ * `dsh >= 0.2.0` replaced the `<textarea>` with a Lexical `contenteditable`
+ * host, so the old `textarea:enabled[placeholder=…]` selector matches nothing.
+ * `[data-input-scroll]` is the editor layer's own marker and survives the inner
+ * element changing again; `[contenteditable="true"]` narrows it to the live
+ * (non-inert) state, which is what the workspace pick unlocks.
+ * @param page - the page to query.
+ * @returns a locator for the unlocked composer editor.
+ */
+export function composerEditor(page: Page): Locator {
+  return page.locator('[data-input-scroll] [contenteditable="true"]')
+}
 
 /**
  * Directory on PATH whose `pnpm` dsh will resolve to. The vitest process is
@@ -113,19 +128,27 @@ export function runDSHPlugin(profile: string, args: readonly string[], cwd: stri
 }
 
 /**
- * Open Settings → Plugins, expand the suggestion card, set provider/model,
- * save. The card is keyed by stable select ids
- * (`#suggest-prompt-settings-provider` / `-model`).
+ * Open Settings → Built-in plugins, select the suggestion card's tab, set the
+ * provider/model, save, and close.
+ *
+ * `dsh >= 0.2.0` moved the plugin settings surface from an expandable card in a
+ * "Plugins" section (`settings.plugin.item`) to a `role="tab"` seat in the
+ * "Built-in plugins" section (`settings.plugins.tab`). The section is labelled
+ * 内置插件, and the tab carries this plugin's own localized label.
+ *
+ * The card's own field ids (`#suggest-prompt-settings-provider` / `-model`) are
+ * unchanged, so only the navigation differs.
  */
 export async function setSuggestionModel(page: Page, provider: string, model: string): Promise<void> {
   await page.getByRole('button', { name: '设置', exact: true }).click()
   const settings = page.getByRole('dialog', { name: '设置' })
   await settings.waitFor({ timeout: 10_000 })
-  await settings.getByRole('button', { name: '插件' }).click()
+  await settings.getByRole('button', { name: '内置插件' }).click()
 
-  const card = settings.getByRole('button', { name: '展开: 建议提示词' })
-  await card.waitFor({ timeout: 10_000 })
-  await card.click()
+  // A tab mounts only once selected, so click it before touching its fields.
+  const tab = settings.getByRole('tab', { name: '建议提示词' })
+  await tab.waitFor({ timeout: 10_000 })
+  await tab.click()
 
   const providerSelect = settings.locator('#suggest-prompt-settings-provider')
   await providerSelect.waitFor({ timeout: 10_000 })

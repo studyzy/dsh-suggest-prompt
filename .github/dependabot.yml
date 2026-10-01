@@ -1,0 +1,47 @@
+# Dependency updates.
+#
+# The `@deepseek-ai/*` packages are the DeepSeek Harness internals this plugin is
+# built against, and the harness changes its contracts between releases. A bump
+# there is therefore a CODE change, not a routine chore: the adaptation steps are
+# documented in AGENTS.md ("Version-critical contracts"), and the affected
+# `pnpm.overrides` pin, docs, tests, and e2e assertions must move together.
+#
+# Dependabot is deliberately NOT pointed at the harness packages. They are pinned
+# exactly (see `.npmrc` / package.json) and upgraded by hand as a deliberate
+# adaptation; an automated PR that only bumps a version would compile-fail at
+# best and silently drift at worst.
+version: 2
+updates:
+  # GitHub Actions: routine, safe to automate.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+    labels:
+      - dependencies
+    groups:
+      actions:
+        patterns:
+          - '*'
+
+  # Tooling dependencies (typescript, vitest, tsdown, playwright, test libs).
+  # These are independent of the harness contracts, so they are safe to batch.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+    labels:
+      - dependencies
+    ignore:
+      # Harness internals are pinned and adapted by hand; see the header note.
+      - dependency-name: '@deepseek-ai/*'
+    groups:
+      dev-tooling:
+        dependency-type: development
+        patterns:
+          - '*'

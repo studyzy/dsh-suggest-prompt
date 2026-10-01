@@ -16,10 +16,10 @@ import type { ZodType } from 'zod'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 // Type-only: resolves ctx.sessionProjections for the optional unit child.
 import type {} from '@deepseek-ai/dsh-session-projection'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { generateSuggestion, resolveSuggestPromptConfig } from './generate.ts'
-import type { SuggestPromptSuggestion } from './types.ts'
+import { applyTranscriptProjection, EMPTY_TRANSCRIPT_STATE } from './transcript.ts'
+import type { SuggestPromptSuggestion, SuggestPromptTranscriptState } from './types.ts'
 
 // The pure payload outlet (./types.ts, ONE home of the `suggestPrompt`
 // projection-key declaration) re-exported onto the package root keeps the
@@ -44,6 +44,26 @@ const suggestPromptProjectionSchema: ZodType<SuggestPromptSuggestion | null> = z
   }),
   zod.null(),
 ]) as ZodType<SuggestPromptSuggestion | null>
+
+/**
+ * Persisted-state schema of the host-only `suggestPromptTranscript` fold.
+ * Validated before a cached checkpoint seeds a fold, so a row written by an
+ * older unit layout is rejected instead of forward-applied into garbage.
+ */
+const transcriptStateSchema: ZodType<SuggestPromptTranscriptState> = zod.object({
+  lastCompletedTurn: zod.number().int().nonnegative(),
+  turnStarts: zod.array(zod.object({
+    turn: zod.number().int().positive(),
+    seq: zod.number().int().nonnegative(),
+  })),
+  entries: zod.array(zod.object({
+    seq: zod.number().int().nonnegative(),
+    role: zod.union([zod.literal('user'), zod.literal('assistant')]),
+    text: zod.string(),
+    turn: zod.number().int().positive(),
+  })),
+  lastSuggestedTurn: zod.number().int().min(-1),
+}) as ZodType<SuggestPromptTranscriptState>
 
 /**
  * Light last-wins fold of the `suggestPrompt` projection unit. The state is
@@ -79,12 +99,6 @@ interface SessionState {
   lastSuggestedTurn: number
   /** One in-flight generation, superseded by abort on the next completed turn. */
   pending: { readonly turn: number; readonly controller: AbortController } | undefined
-}
-
-/** Seed the dedupe cursor from the log so reloads never regenerate a turn. */
-function lastSuggestedTurnInLog(session: Session): number {
-  const event = session.events.findLast(candidate => candidate.type === 'suggest-prompt/suggested')
-  return event?.data.turn ?? -1
 }
 
 /** Required LLM and session policy; this plugin adds no defaults. */
@@ -131,37 +145,59 @@ export const name = 'suggest-prompt'
 export const inject = ['llm', 'sessions']
 
 /**
- * The settings namespace owning the suggestion route. Editable from the WebUI
- * settings surface (`settings.plugin.item`, keyed by this value) and from
- * `~/.dsh/settings.yaml`; the cordis.yml entry remains the composition base.
+ * Settings namespace of the suggestion route. `dsh >= 0.2.0` keys a plugin's
+ * settings page by its profile entry id and derives the form from the plugin's
+ * own `Config` schema, so this value names that entry/page rather than a
+ * separately registered namespace. It is what the WebUI settings card binds to
+ * and what `configEditor` writes through.
  */
-export const SUGGEST_PROMPT_NS = settingsNamespace('suggest-prompt')
+export const SUGGEST_PROMPT_NS = 'suggest-prompt'
 
 /**
  * Mount the plugin: listen for completed turns, generate per-session
  * suggestions, and register the `suggestPrompt` projection unit.
+ *
+ * Policy resolution has no settings-service plumbing here by design: in
+ * `dsh >= 0.2.0` the composition entry's `config` IS the settings-backed value.
+ * The loader re-resolves the entry config when the settings document changes,
+ * so `config` is read fresh at each generation instead of being captured once.
  * @param ctx - context exposing the LLM and session services.
  * @param config - required bounded-generation policy.
  */
 export function apply(ctx: Context, config: Config): void {
-  // The authoritative policy is the settings-resolved section while a settings
-  // service is mounted (composition entry as `base`, user document overrides),
-  // and the composition entry otherwise. installSettingsSection hands over a
-  // THUNK for the live resolved section, so re-resolving at each generation
-  // keeps a settings edit effective on the next completed turn.
-  let source: () => Config = () => config
-  installSettingsSection(ctx, SUGGEST_PROMPT_NS, Config, config, {
-    validate: (value) => { resolveSuggestPromptConfig(value) },
-    setSource: (next) => { source = next },
-    onChange: () => {},
+  // Everything runs under the projection registry: generation reads the
+  // retained transcript from `suggestPromptTranscript` rather than scanning
+  // session history, so an assembly without the registry cannot generate. The
+  // scoped inject keeps the absence graceful — a headless assembly simply never
+  // mounts the suggestion capability instead of throwing at every turn end.
+  ctx.inject(['sessionProjections'], (projectionCtx) => {
+    applyWithProjections(projectionCtx, config)
   })
+}
+
+/**
+ * Body of the plugin once the projection registry is present.
+ * @param ctx - context exposing the LLM, session, and projection services.
+ * @param config - required bounded-generation policy.
+ */
+function applyWithProjections(ctx: Context, config: Config): void {
   const states = new WeakMap<Session, SessionState>()
   const tracked = new Set<SessionState>()
+
+  /** The retained transcript fold for one session. */
+  const transcriptStateOf = (session: Session): SuggestPromptTranscriptState =>
+    ctx.sessionProjections.stateOf(session, 'suggestPromptTranscript') ?? EMPTY_TRANSCRIPT_STATE
 
   const handleTurnEnd = (session: Session, turn: number): void => {
     let state = states.get(session)
     if (state === undefined) {
-      state = { lastSuggestedTurn: lastSuggestedTurnInLog(session), pending: undefined }
+      // The dedupe cursor comes from the fold, which is seeded from the
+      // persisted checkpoint (or by folding the in-memory log on first touch),
+      // so a reload never regenerates an already-suggested turn.
+      state = {
+        lastSuggestedTurn: transcriptStateOf(session).lastSuggestedTurn,
+        pending: undefined,
+      }
       states.set(session, state)
       tracked.add(state)
     }
@@ -173,13 +209,18 @@ export function apply(ctx: Context, config: Config): void {
     }
     const controller = new AbortController()
     state.pending = { turn, controller }
-    // Resolve the policy from the live source so a settings edit lands on the
-    // next generation; the microtask reads it when the turn settles.
-    const resolved = resolveSuggestPromptConfig(source())
+    // Resolve the policy fresh at each turn: the composition entry's `config`
+    // is the settings-backed value, so a settings edit lands on the next
+    // completed turn. The microtask reads it when the turn settles.
+    const resolved = resolveSuggestPromptConfig(config)
     // session/event is dispatched synchronously inside the committing append;
     // re-appending from that stack reenters the session. Defer to a microtask
     // so the suggestion's own request/suggested events publish cleanly.
-    void Promise.resolve().then(() => generateSuggestion(ctx, resolved, session, turn, controller.signal)).then(
+    void Promise.resolve().then(() => {
+      // The transcript fold reflects every event up to and including this
+      // turn/end, so reading it here yields the completed turn's messages.
+      return generateSuggestion(ctx, resolved, session, turn, transcriptStateOf(session), controller.signal)
+    }).then(
       () => {
         // A superseded generation always rejects instead: generateSuggestion
         // checks the deadline signal after every chunk, so success can never
@@ -214,23 +255,32 @@ export function apply(ctx: Context, config: Config): void {
   })
 
   // The `suggestPrompt` projection unit: last-wins fold of whole values (see
-  // applySuggestPromptProjection). The unit child activates only when a
-  // projection registry is composed (headless assemblies stay unaffected).
-  ctx.inject(['sessionProjections'], (projectionCtx) => {
-    projectionCtx.sessionProjections.register<'suggestPrompt', SuggestPromptSuggestion | null>({
-      key: 'suggestPrompt',
-      // dsh 0.1.1 projection contract: the persistable state schema is
-      // `stateSchema`, and the browser-visible view moves into the required
-      // `wire` sub-object. A unit without `wire` is host-only and never
-      // reaches the browser, so the ghost overlay would read null.
-      stateSchema: suggestPromptProjectionSchema,
-      init: () => null,
-      apply: applySuggestPromptProjection,
-      wire: {
-        viewSchema: suggestPromptProjectionSchema,
-        view: state => state,
-      },
-      stateVersion: 1,
-    })
+  // applySuggestPromptProjection). Registered here because the whole plugin
+  // body is scoped to the projection registry.
+  ctx.sessionProjections.register<'suggestPrompt', SuggestPromptSuggestion | null>({
+    key: 'suggestPrompt',
+    // dsh >= 0.2.0 projection contract: the persistable state schema is
+    // `stateSchema`, and the browser-visible view moves into the required
+    // `wire` sub-object. A unit without `wire` is host-only and never reaches
+    // the browser, so the ghost overlay would read null.
+    stateSchema: suggestPromptProjectionSchema,
+    init: () => null,
+    apply: applySuggestPromptProjection,
+    wire: {
+      viewSchema: suggestPromptProjectionSchema,
+      view: state => state,
+    },
+    stateVersion: 1,
+  })
+
+  // Host-only companion fold: the retained transcript that generation reads in
+  // place of the prohibited synchronous session-history scans. It carries no
+  // `wire`, so its state never leaves the host.
+  ctx.sessionProjections.register<'suggestPromptTranscript', SuggestPromptTranscriptState>({
+    key: 'suggestPromptTranscript',
+    stateSchema: transcriptStateSchema,
+    init: () => EMPTY_TRANSCRIPT_STATE,
+    apply: applyTranscriptProjection,
+    stateVersion: 1,
   })
 }

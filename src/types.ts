@@ -55,6 +55,40 @@ export interface SuggestPromptSuggestion {
  */
 export type SuggestPromptProjection = SuggestPromptSuggestion | null
 
+/**
+ * One model-visible user/assistant exchange retained for the suggestion
+ * transcript, with the log attribution needed to bound and cite it.
+ */
+export interface SuggestPromptTranscriptEntry {
+  /** Log seq of the source `user/message` or `assistant/message` event. */
+  readonly seq: number
+  /** Speaker of the retained message. */
+  readonly role: 'user' | 'assistant'
+  /** Rendered, redacted, single-line text. */
+  readonly text: string
+  /** Turn this message belongs to (`0` before the first `turn/start`). */
+  readonly turn: number
+}
+
+/**
+ * Host-only fold state backing the suggestion transcript. `dsh >= 0.2.0`
+ * deprecates synchronous session-history reads for new production callers, so
+ * the plugin reconstructs what it needs from committed events instead of
+ * scanning `session.events`: `turnStarts` bounds the completed-turn window,
+ * `entries` carries the model-visible text, and `lastSuggestedTurn` seeds the
+ * per-session dedupe cursor across reloads.
+ */
+export interface SuggestPromptTranscriptState {
+  /** Turn number of the newest `turn/end` seen, or `0` before any completes. */
+  readonly lastCompletedTurn: number
+  /** Turn-start seq per turn, oldest first (bounds the transcript window). */
+  readonly turnStarts: readonly { readonly turn: number; readonly seq: number }[]
+  /** Retained model-visible pairs, oldest first, bounded by a fixed window. */
+  readonly entries: readonly SuggestPromptTranscriptEntry[]
+  /** Newest `suggest-prompt/suggested` turn, or `-1`; the dedupe cursor. */
+  readonly lastSuggestedTurn: number
+}
+
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionMap {
     /**
@@ -64,5 +98,13 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
      * complete post-change suggestion, so the fold is last-wins.
      */
     suggestPrompt: SuggestPromptProjection
+  }
+
+  interface SessionProjectionStateMap {
+    /**
+     * Host-only transcript fold. Never client-visible: the retained text is
+     * consumed on the host to build the bounded auxiliary request.
+     */
+    suggestPromptTranscript: SuggestPromptTranscriptState
   }
 }

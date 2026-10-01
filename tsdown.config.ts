@@ -18,25 +18,37 @@ const HOST_EXTERNALS: readonly string[] = [
   '@deepseek-ai/schemastery',
   '@deepseek-ai/dsh-session',
   '@deepseek-ai/dsh-session-projection',
-  '@deepseek-ai/dsh-settings',
   '@deepseek-ai/dsh-timeout',
   '@deepseek-ai/dsh-llm',
+  '@deepseek-ai/dsh-util-values',
   '@deepseek-ai/dsh-invariants',
   'zod',
 ]
 
 const CLIENT_ID = '@studyzy/dsh-suggest-prompt/client'
+/**
+ * Client-bundle externals. In `dsh >= 0.2.0` a fetch bundle may only require the
+ * shell's platform-singleton seed words; requiring anything else misses the
+ * frozen module table and throws at load. The seed table is `PLATFORM_MODULES`
+ * in the harness's `dsh-client-web` package: `react`, `react/jsx-runtime`,
+ * `react-dom`, `react-dom/client`, cordis, `dsh-client-store`,
+ * `dsh-client-ui-slots`, `dsh-client-ui-primitives`, `dsh-client-ui-dockkit`.
+ *
+ * The `dsh-client-*` packages this plugin consumes for TYPES only
+ * (ui-conversation, ui-settings, ui-renderer, locale) are deliberately absent:
+ * they are type-only imports erased at build, and listing them would emit a
+ * require that the module table cannot answer.
+ */
 const CLIENT_EXTERNALS: readonly string[] = [
-  '@deepseek-ai/cordis',
-  '@deepseek-ai/dsh-client-runtime/client',
-  '@deepseek-ai/dsh-client-ui-conversation/client',
-  '@deepseek-ai/dsh-client-ui-settings-plugins/client',
-  '@deepseek-ai/dsh-client-ui-settings/client',
-  '@deepseek-ai/dsh-client-locale/client',
-  '@deepseek-ai/dsh-client-ui-primitives',
-  '@deepseek-ai/dsh-client-ui-slots',
   'react',
   'react/jsx-runtime',
+  'react-dom',
+  'react-dom/client',
+  '@deepseek-ai/cordis',
+  '@deepseek-ai/dsh-client-store',
+  '@deepseek-ai/dsh-client-ui-slots',
+  '@deepseek-ai/dsh-client-ui-primitives',
+  '@deepseek-ai/dsh-client-ui-dockkit',
 ]
 
 const host: UserConfig = {
@@ -49,6 +61,9 @@ const host: UserConfig = {
   fixedExtension: false,
   dts: false,
   clean: false,
+  // Declared dependencies and peers stay external so the running harness
+  // resolves them from its own install (one instance of each service).
+  external: [...HOST_EXTERNALS],
 }
 
 const client: UserConfig = {

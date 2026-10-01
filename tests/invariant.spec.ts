@@ -1,7 +1,13 @@
 /**
- * suggest-prompt invariant manual topology: the companion seeds validation
- * over sessions that already exist when it installs, so a pre-populated
- * session exercises both seed loops (existing events and existing sessions).
+ * suggest-prompt invariant behavior: the companion validates every event
+ * committed through `session/event`, which covers both newly appended events
+ * and the replay of an already-logged one.
+ *
+ * `dsh >= 0.2.0` prohibits new synchronous reads of session history, so the
+ * companion no longer seeds by scanning `session.events` at install time; it
+ * relies on committed delivery instead. These tests therefore exercise the
+ * delivery tap (accepting a valid event, rejecting a malformed one) rather than
+ * an install-time scan.
  * Manual topology suites are excluded from the vitest-wide invariant host
  * (see scripts/test-invariants.ts).
  */
@@ -12,18 +18,17 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import { apply as installCompanion } from '../src/invariant.ts'
 
 describe('suggest-prompt invariant companion', () => {
-  it('seeds validation over pre-existing sessions and events on install', async () => {
+  it('accepts a well-formed suggestion committed after install', async () => {
     const ctx = new Context()
     await ctx.plugin(InvariantRegistry, { enabled: true })
     await ctx.plugin(SessionStore)
-    const session = ctx.sessions.create(SessionId('seed-session'))
-    session.append('turn/start', { turn: 1 })
-    session.append('suggest-prompt/suggested', {
-      version: 1, turn: 1, baseSeq: 2, text: '建议', truncated: false, requestSeq: 1, acceptKey: 'Tab',
-    })
-    // Install after the session exists: the companion seeds from ctx.sessions.list().
     await ctx.plugin({ inject: ['invariants'], apply: installCompanion })
-    expect(session.events.some(event => event.type === 'suggest-prompt/suggested')).toBe(true)
+    const session = ctx.sessions.create(SessionId('valid-delivery'))
+    session.append('turn/start', { turn: 1 })
+    // A valid payload must pass the delivery tap without failing the invariant.
+    expect(() => session.append('suggest-prompt/suggested', {
+      version: 1, turn: 1, baseSeq: 2, text: '建议', truncated: false, requestSeq: 1, acceptKey: 'Tab',
+    })).not.toThrow()
     await ctx.fiber.dispose()
   })
 

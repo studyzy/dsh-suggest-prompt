@@ -11,15 +11,15 @@ import type { Context } from '@deepseek-ai/cordis'
 import {
   BlockAssembler,
   createUserMessage,
-  deepFreeze,
   ReasoningEffortId,
 } from '@deepseek-ai/dsh-llm'
 import type { FinishReason, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import type { Session } from '@deepseek-ai/dsh-session'
-import { deriveEventMessage } from '@deepseek-ai/dsh-session/surface'
+import { deepFreeze } from '@deepseek-ai/dsh-util-values'
 import { deadline, MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type { SuggestPromptRequested, SuggestPromptSuggested } from './domain.ts'
-import { cleanSuggestion, hasCJK, redactSecrets, sanitizeSuggestion, shouldFilterSuggestion } from './sanitize.ts'
+import { cleanSuggestion, hasCJK, sanitizeSuggestion, shouldFilterSuggestion } from './sanitize.ts'
+import type { SuggestPromptTranscriptState } from './types.ts'
 import type { Config } from './index.ts'
 
 /** Capability-owned timeout reason code for auxiliary suggestion requests. */
@@ -186,15 +186,6 @@ export interface Transcript {
   readonly baseSeq: number
 }
 
-/** Render a message's text blocks; non-text blocks contribute nothing. */
-function renderMessageText(message: Message): string {
-  let out = ''
-  for (const block of message.content) {
-    if (block.type === 'text') out += block.text
-  }
-  return out
-}
-
 /** Keep the newest pairs while the budget lasts; always keep the newest one. */
 function keepTail(pairs: readonly TranscriptPair[], budget: number): number {
   let remaining = budget
@@ -209,60 +200,41 @@ function keepTail(pairs: readonly TranscriptPair[], budget: number): number {
 }
 
 /**
- * Build the model-visible transcript from the session log: user/assistant
- * messages of the last `maxRecentTurns` completed turns (default 1 — only the
- * last completed turn's user input and assistant final answer), redacted,
+ * Build the model-visible transcript from the retained fold state: user and
+ * assistant pairs of the last `maxRecentTurns` completed turns (default 1 —
+ * only the last completed turn's user input and assistant final answer),
  * tail-trimmed to `maxTranscriptChars`.
- * @param session - session whose log is the transcript source.
+ *
+ * The state arrives pre-redacted and pre-filtered from
+ * `applyTranscriptProjection`; this function only bounds the window and the
+ * character budget. Reading fold state — rather than scanning session history
+ * — is what keeps the plugin clear of the deprecated synchronous history
+ * readers.
+ * @param state - the retained `suggestPromptTranscript` fold state.
  * @param maxRecentTurns - completed-turn tail to include (1 keeps only the last turn).
  * @param maxTranscriptChars - character budget for the kept tail.
- * @returns the bounded transcript, or `undefined` when no completed turn has messages.
+ * @returns the bounded transcript, or `undefined` when the window holds no text.
  */
 export function buildTranscript(
-  session: Session,
+  state: SuggestPromptTranscriptState,
   maxRecentTurns: number,
   maxTranscriptChars: number,
 ): Transcript | undefined {
-  const events = session.events
-  let lastTurn = 0
-  const turnStarts: Array<{ readonly turn: number; readonly seq: number }> = []
-  for (const event of events) {
-    if (event.type === 'turn/start') turnStarts.push({ turn: event.data.turn, seq: event.seq })
-    else if (event.type === 'turn/end') lastTurn = event.data.turn
-  }
+  const lastTurn = state.lastCompletedTurn
   if (lastTurn === 0) return undefined
   const cutoffTurn = Math.max(1, lastTurn - Math.max(1, maxRecentTurns) + 1)
-  const cutoffSeq = turnStarts.find(entry => entry.turn === cutoffTurn)?.seq ?? 0
-  const pairs: TranscriptPair[] = []
-  const sourceMessageSeqs: number[] = []
-  let baseSeq = 0
-  for (const event of events) {
-    if (event.seq < cutoffSeq) continue
-    if (event.type !== 'user/message' && event.type !== 'assistant/message') continue
-    const message = deriveEventMessage(event)
-    if (message === null) continue
-    const text = renderMessageText(message).trim()
-    if (text.length === 0) continue
-    // Keep only genuine user-typed input, never harness-injected context.
-    // Harness writes workspace instructions (agent-instructions), the runtime
-    // snapshot (plugin @deepseek-ai/dsh-system-prompt) and the skill catalog
-    // (skill-catalog) as user/message events; those can be huge and would blow
-    // the maxInputBytes bound on the first turn of a fresh session, silently
-    // suppressing every suggestion. The genuine prompt is source.kind 'user'.
-    if (message.role === 'user' && (message.source as { kind?: unknown }).kind !== 'user') continue
-    pairs.push({ role: message.role === 'user' ? 'user' : 'assistant', text: redactSecrets(text) })
-    sourceMessageSeqs.push(event.seq)
-    baseSeq = event.seq
-  }
-  if (pairs.length === 0) return undefined
+  const inWindow = state.entries.filter(entry => entry.turn >= cutoffTurn)
+  if (inWindow.length === 0) return undefined
+  const pairs: TranscriptPair[] = inWindow.map(entry => ({ role: entry.role, text: entry.text }))
+  const sourceMessageSeqs = inWindow.map(entry => entry.seq)
   const keptCount = keepTail(pairs, Math.max(1, maxTranscriptChars))
   const kept = pairs.slice(pairs.length - keptCount)
   const keptSeqs = sourceMessageSeqs.slice(sourceMessageSeqs.length - keptCount)
   return {
     pairs: kept,
     sourceMessageSeqs: keptSeqs,
-    // keptSeqs is a tail slice, so the newest message seq is the baseSeq.
-    baseSeq,
+    // keptSeqs is a tail slice, so the newest retained seq is the baseSeq.
+    baseSeq: keptSeqs[keptSeqs.length - 1] ?? 0,
   }
 }
 
@@ -329,10 +301,11 @@ export async function generateSuggestion(
   config: ResolvedSuggestPromptConfig,
   session: Session,
   turn: number,
+  transcriptState: SuggestPromptTranscriptState,
   signal: AbortSignal,
 ): Promise<SuggestPromptSuggested | undefined> {
   signal.throwIfAborted()
-  const transcript = buildTranscript(session, config.maxRecentTurns ?? 1, config.maxTranscriptChars)
+  const transcript = buildTranscript(transcriptState, config.maxRecentTurns ?? 1, config.maxTranscriptChars)
   if (transcript === undefined) {
     throw new Error('suggest-prompt: session has no model-visible transcript to suggest from')
   }
@@ -346,7 +319,7 @@ export async function generateSuggestion(
   }
   const messages: Message[] = [createUserMessage({
     content: [{ type: 'text', text: framed }],
-    source: { kind: 'plugin', plugin: 'dsh-suggest-prompt' },
+    source: { kind: 'suggest-prompt', plugin: 'dsh-suggest-prompt', form: 'transcript' },
   })]
   using callDeadline = deadline(signal, config.timeoutMs, SUGGEST_PROMPT_TIMEOUT_CODE)
   const requestOptions = (reasoningOff: boolean): GenerateOptions => deepFreeze({

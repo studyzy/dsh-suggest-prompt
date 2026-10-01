@@ -1,17 +1,17 @@
 /**
- * The suggest-prompt route card inside the WebUI plugin settings section:
+ * The suggest-prompt route card inside the WebUI Plugins settings section:
  * provider/model for the ghost suggestion generation, chosen from the installed
  * provider catalog and staged until save. The chrome replicates the harness's
  * plugin settings cards (PluginCard/ValueField) so this card reads identically
  * to the built-in ones.
- * @module @studyzy/dsh-client-ui-suggest-prompt/settings-card
+ * @module @studyzy/dsh-suggest-prompt/settings-card
  */
 
 import { useState } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
-// Type-only: pulls the 'settings.plugin.item' SlotMap merge (the keyed card slot).
-import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
+import { IconChevronDownOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+// Type-only: pulls the 'settings.plugins.tab' SlotMap merge (the Plugins section tab seat).
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: pulls the 'suggest-prompt.settings' LocaleNamespaceMap merge.
 import type {} from './settings-locales.ts'
 import type { SuggestPromptCardFace, SuggestPromptCardState, RouteOption, SuggestPromptEditField } from './settings-controller.ts'
@@ -20,7 +20,7 @@ import { encodeKey } from './accept-key.ts'
 
 /** Props the renderer binds for the suggest-prompt card. */
 export type SettingsCardProps =
-  PropsRuntime<'settings.plugin.item'>
+  PropsRuntime<'settings.plugins.tab'>
   & PropsLocale<'suggest-prompt.settings'>
   & InjectFace<SuggestPromptCardFace>
 
@@ -379,7 +379,7 @@ export function SettingsCard(props: SettingsCardProps) {
             <span className="dsh-sug-description">{t('description')}</span>
           </span>
           {state.dirty ? <span className="dsh-sug-pending">{t('unsaved')}</span> : null}
-          <IconChevronDownOutline14
+          <IconChevronDownOutlineMedium
             className={open ? 'dsh-sug-chevron dsh-sug-chevron-open' : 'dsh-sug-chevron'}
           />
         </button>

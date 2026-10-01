@@ -105,7 +105,10 @@ describe('suggest-prompt Loader composition', () => {
 
     expect(adapter.requests).toHaveLength(1)
     expect(adapter.requests[0]).toMatchObject({ provider: 'main', model: 'main-model' })
-    const suggested = session.events
+    // `snapshotEvents()` is the sanctioned inspection reader for repository tests
+    // (rc.2 removed the bare `events` accessor and prohibits new synchronous
+    // history reads in production code).
+    const suggested = session.snapshotEvents()
       .filter(event => event.type === 'suggest-prompt/suggested')
       .map(event => event.data)
     expect(suggested).toHaveLength(1)

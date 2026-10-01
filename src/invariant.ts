@@ -54,13 +54,15 @@ function validateEvent(event: SessionEvent, fail: InvariantFailure): void {
   }
 }
 
-/** Install validation for loaded and newly appended suggest-prompt state. */
+/**
+ * Install validation for newly committed suggest-prompt state.
+ *
+ * Only committed delivery is validated, matching the `dsh >= 0.2.0` invariant
+ * shape: the `internal/dispatch` tap sees every `session/event` (including the
+ * replay of a resumed log), while scanning each Session's history with
+ * `session.events` is prohibited for new production callers.
+ */
 const install: InvariantInstaller = Object.assign((ctx: Context, fail: InvariantFailure) => {
-  const seed = (session: Session): void => {
-    for (const event of session.events) validateEvent(event, fail)
-  }
-  for (const session of ctx.sessions.list()) seed(session)
-  ctx.on('session/created', (session) => { seed(session) }, { global: true })
   ctx.on('internal/dispatch', (_mode, eventName, args) => {
     if (eventName !== 'session/event') return
     const [, event] = args as [Session, SessionEvent]

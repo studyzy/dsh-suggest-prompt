@@ -17,7 +17,8 @@ import {
   suggestionLanguage,
   systemPrompt,
 } from '../src/generate.ts'
-import type { SuggestPromptProjection } from '../src/types.ts'
+import type { SuggestPromptProjection, SuggestPromptTranscriptState } from '../src/types.ts'
+import { applyTranscriptProjection, EMPTY_TRANSCRIPT_STATE } from '../src/transcript.ts'
 import type { SuggestPromptRequested, SuggestPromptSuggested } from '../src/domain.ts'
 
 const CONFIG = {
@@ -113,9 +114,35 @@ function appendTurn(session: Session, turn: number, user: string, assistant: str
 }
 
 function suggestedEvents(session: Session): SuggestPromptSuggested[] {
-  return session.events
+  return session.snapshotEvents()
     .filter(event => event.type === 'suggest-prompt/suggested')
     .map(event => event.data)
+}
+
+/**
+ * Fold a session's committed events into the host-only transcript state.
+ *
+ * The plugin reads this projection state at generation time instead of scanning
+ * the log (rc.2 prohibits new synchronous history reads in production code and
+ * removed the bare `events` accessor), so these tests build their input the same
+ * way the runtime does. `snapshotEvents()` is the sanctioned inspection reader
+ * for repository tests.
+ * @param session - session whose committed events are folded.
+ * @returns the transcript fold state generation consumes.
+ */
+function foldTranscript(session: Session): SuggestPromptTranscriptState {
+  return session.snapshotEvents().reduce(applyTranscriptProjection, EMPTY_TRANSCRIPT_STATE)
+}
+
+/**
+ * The transcript one session's folded events produce.
+ * @param session - source session.
+ * @param maxRecentTurns - completed-turn tail to include.
+ * @param maxTranscriptChars - character budget for the kept tail.
+ * @returns the bounded transcript, or undefined when the window holds no text.
+ */
+function transcriptOf(session: Session, maxRecentTurns: number, maxTranscriptChars: number) {
+  return buildTranscript(foldTranscript(session), maxRecentTurns, maxTranscriptChars)
 }
 
 async function settle(): Promise<void> {
@@ -185,23 +212,23 @@ describe('buildTranscript', () => {
   it('returns undefined without a completed turn', () => {
     const session = Session.create(SessionId('no-turn'))
     session.append('turn/start', { turn: 1 })
-    expect(buildTranscript(session, 3, 500)).toBeUndefined()
+    expect(transcriptOf(session, 3, 500)).toBeUndefined()
   })
 
   it('returns undefined without model-visible messages', () => {
     const session = Session.create(SessionId('no-messages'))
     session.append('turn/start', { turn: 1 })
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
-    expect(buildTranscript(session, 3, 500)).toBeUndefined()
+    expect(transcriptOf(session, 3, 500)).toBeUndefined()
   })
 
   it('keeps only the newest maxRecentTurns and reports source seqs and base seq', () => {
     const session = Session.create(SessionId('recent-turns'))
     appendTurn(session, 1, '旧问题', '旧回答')
-    const secondUser = session.events.find(event => event.type === 'user/message')!.seq
+    const secondUser = session.snapshotEvents().find(event => event.type === 'user/message')!.seq
     void secondUser
     appendTurn(session, 2, '新问题', '新回答')
-    const transcript = buildTranscript(session, 1, 500)!
+    const transcript = transcriptOf(session, 1, 500)!
     expect(transcript.pairs.map(pair => pair.text)).toEqual(['新问题', '新回答'])
     expect(transcript.baseSeq).toBe(transcript.sourceMessageSeqs[transcript.sourceMessageSeqs.length - 1])
     expect(transcript.sourceMessageSeqs.every(seq => Number.isInteger(seq) && seq >= 0)).toBe(true)
@@ -211,7 +238,7 @@ describe('buildTranscript', () => {
     const session = Session.create(SessionId('char-budget'))
     appendTurn(session, 1, '旧问题', '旧回答')
     appendTurn(session, 2, '新', '新')
-    const transcript = buildTranscript(session, 3, 4)!
+    const transcript = transcriptOf(session, 3, 4)!
     // Even a single pair exceeds the budget; the newest pair still survives.
     expect(transcript.pairs.map(pair => pair.text)).toEqual(['新'])
   })
@@ -234,7 +261,7 @@ describe('buildTranscript', () => {
       }),
     }, { surfaceOp: 'append' })
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
-    const transcript = buildTranscript(session, 3, 500)!
+    const transcript = transcriptOf(session, 3, 500)!
     expect(transcript.pairs.map(pair => pair.text)).toEqual(['有文本'])
     expect(transcript.sourceMessageSeqs).toHaveLength(1)
   })
@@ -259,7 +286,7 @@ describe('buildTranscript', () => {
     session.append('assistant/message', { turn: 1, step: 1, message: assistantMessage('好的，题目是……') }, { surfaceOp: 'append' })
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 
-    const transcript = buildTranscript(session, 1, 500)!
+    const transcript = transcriptOf(session, 1, 500)!
     // Only the real prompt survives; the injected context is dropped.
     expect(transcript.pairs.map(pair => pair.text)).toEqual(['出一道小学数学题给我', '好的，题目是……'])
     expect(transcript.sourceMessageSeqs).toHaveLength(2)
@@ -316,7 +343,7 @@ describe('suggest-prompt plugin generation', () => {
     // attempt is refused before dispatch and the generation retries without the
     // override. Both attempts are logged pre-dispatch; the suggestion points at
     // the request that actually produced it (the retry).
-    const requestEvents = session.events.filter(event => event.type === 'suggest-prompt/request')
+    const requestEvents = session.snapshotEvents().filter(event => event.type === 'suggest-prompt/request')
     expect(requestEvents).toHaveLength(2)
     expect((requestEvents[0]?.data as SuggestPromptRequested | undefined)?.reasoningOff).toBe(true)
     expect((requestEvents[1]?.data as SuggestPromptRequested | undefined)?.reasoningOff).toBe(false)
@@ -388,7 +415,7 @@ describe('suggest-prompt plugin generation', () => {
 
     await settle()
     expect(adapter.requests).toHaveLength(1)
-    const requestData = session.events.find(event => event.type === 'suggest-prompt/request')!.data as { messages: readonly Message[] }
+    const requestData = session.snapshotEvents().find(event => event.type === 'suggest-prompt/request')!.data as { messages: readonly Message[] }
     const framed = requestData.messages[0]?.content
       .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
       .map(block => block.text)
@@ -605,6 +632,7 @@ describe('generateSuggestion direct boundary', () => {
       resolveSuggestPromptConfig(CONFIG),
       session,
       1,
+      foldTranscript(session),
       signal.signal,
     )).rejects.toThrow()
   })
@@ -621,6 +649,7 @@ describe('generateSuggestion direct boundary', () => {
       resolveSuggestPromptConfig(CONFIG),
       session,
       1,
+      foldTranscript(session),
       new AbortController().signal,
     )).rejects.toThrow(/no model-visible transcript/)
   })
@@ -636,6 +665,7 @@ describe('generateSuggestion direct boundary', () => {
       resolveSuggestPromptConfig({ ...CONFIG, maxInputBytes: 10 }),
       session,
       1,
+      foldTranscript(session),
       new AbortController().signal,
     )).rejects.toThrow(/exceeding maxInputBytes/)
   })
@@ -657,6 +687,7 @@ describe('generateSuggestion direct boundary', () => {
       resolveSuggestPromptConfig(CONFIG),
       session,
       1,
+      foldTranscript(session),
       new AbortController().signal,
     )).rejects.toThrow(/must contain text only/)
   })
@@ -681,6 +712,7 @@ describe('generateSuggestion direct boundary', () => {
         resolveSuggestPromptConfig(CONFIG),
         session,
         1,
+        foldTranscript(session),
         new AbortController().signal,
       )).rejects.toThrow(message)
     }
@@ -699,10 +731,11 @@ describe('generateSuggestion direct boundary', () => {
       resolveSuggestPromptConfig(CONFIG),
       session,
       1,
+      foldTranscript(session),
       new AbortController().signal,
     )
     expect(result).toBeUndefined()
-    expect(session.events.some(event => event.type === 'suggest-prompt/suggested')).toBe(false)
+    expect(session.snapshotEvents().some(event => event.type === 'suggest-prompt/suggested')).toBe(false)
   })
 
   it('defaults the accept key to Tab when the config omits it', async () => {
@@ -718,6 +751,7 @@ describe('generateSuggestion direct boundary', () => {
       resolveSuggestPromptConfig(CONFIG),
       session,
       1,
+      foldTranscript(session),
       new AbortController().signal,
     )
     expect(result?.acceptKey).toBe('Tab')
@@ -740,10 +774,11 @@ describe('generateSuggestion direct boundary', () => {
       }),
       session,
       2,
+      foldTranscript(session),
       new AbortController().signal,
     )
     expect(result).toBeDefined()
-    const requestData = session.events.find(event => event.type === 'suggest-prompt/request')!.data as { messages: readonly Message[] }
+    const requestData = session.snapshotEvents().find(event => event.type === 'suggest-prompt/request')!.data as { messages: readonly Message[] }
     const framed = requestData.messages[0]?.content
       .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
       .map(block => block.text)

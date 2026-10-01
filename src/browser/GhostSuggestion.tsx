@@ -1,11 +1,15 @@
 /**
  * Suggested-next-prompt ghost text: reads the `suggestPrompt` projection and,
- * when the session just completed a turn and the draft is empty, renders the
- * current suggestion as light placeholder text INSIDE the composer textarea
- * (overlay slot, pointer-events: none, so it never blocks input). Pressing the
- * configured shortcut (default `Tab`, like Claude Code) while focus sits in the
- * composer fills the draft with the suggestion through `inputActions.setDraft`,
- * leaving it editable.
+ * when the session is idle with an empty draft, renders the current suggestion
+ * as light placeholder text INSIDE the composer (overlay slot,
+ * `pointer-events: none`, so it never blocks input). Pressing the configured
+ * shortcut (default `Tab`) while focus sits in the composer fills the draft
+ * with the suggestion through `inputActions.setDraft`, leaving it editable.
+ *
+ * `dsh >= 0.2.0` note: the composer is a Lexical `contenteditable` host, not a
+ * `<textarea>`, and its native placeholder is a sibling `<div>` rather than a
+ * `::placeholder` pseudo-element. Both facts drive the selectors and the focus
+ * check below.
  */
 import { useEffect, useMemo, type CSSProperties } from 'react'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -30,9 +34,10 @@ const CSS_TEXT = `
 .dsh-suggest-prompt-ghost {
   position: absolute;
   /* overlayAnchor sits at the composer card's top edge (inset: 0 0 auto).
-     Align the ghost with the textarea's text origin: the card adds 10px top
-     padding and the backdrop layer adds 4px top / 16px left (see InputBar).
-     pointer-events:none keeps the caret and clicks on the textarea. */
+     Align the ghost with the editor's text origin: the card adds 10px top
+     padding and the editor scroll layer adds 4px top / 16px left (see
+     InputBar/DraftEditor). pointer-events:none keeps the caret and clicks on
+     the editor. */
   top: calc(10px + 4px);
   left: 16px;
   right: 12px;
@@ -46,11 +51,22 @@ const CSS_TEXT = `
   pointer-events: none;
   user-select: none;
 }
-/* The native composer placeholder (e.g. "给智能体发消息") renders at the same
-   text origin as the ghost, so a suggestion would overlap it while the draft
-   is empty. Hide it for the composer card that carries a visible ghost.
-   WebKit paints placeholder glyphs with -webkit-text-fill-color (which
-   outranks color), so BOTH properties must go transparent. */
+/* The native composer placeholder ("给智能体发消息") occupies the SAME text
+   origin as the ghost. In dsh >= 0.2.0 it is a real element, not a textarea
+   ::placeholder pseudo-element, so hiding it means hiding that node: while a
+   ghost is visible the two would otherwise paint on top of each other and
+   neither reads. Scoped with :has() to the composer that actually carries a
+   ghost, so the built-in placeholder is untouched everywhere else.
+
+   Visibility (not display) is deliberate: the node still occupies its box, so
+   the composer's height and the ghost's baseline do not shift when the
+   suggestion appears or is accepted. */
+[data-composer-card]:has(.dsh-suggest-prompt-ghost) [data-composer-placeholder] {
+  visibility: hidden;
+}
+/* Older assemblies (and any future regression back to a textarea) paint the
+   placeholder with the pseudo-element; WebKit uses -webkit-text-fill-color,
+   which outranks color, so both must go transparent. */
 [data-composer-card]:has(.dsh-suggest-prompt-ghost) textarea::placeholder {
   color: transparent;
   -webkit-text-fill-color: transparent;
@@ -60,35 +76,46 @@ const CSS_TEXT = `
 const ROOT_STYLE: CSSProperties = { display: 'contents' }
 
 /**
- * The session's latest completed turn. `turnEnds` maps in-window turn numbers
- * to their `turn/end` event seqs in event order, so the last key is the newest
- * completed turn.
+ * Whether focus currently sits in the chat composer's editor.
+ *
+ * The composer changed shape in `dsh >= 0.2.0` (Lexical `contenteditable` host
+ * instead of a `<textarea>`), so this matches either form rather than
+ * asserting one. The editor layer's `[data-input-scroll]` marker is the stable
+ * anchor: it identifies the composer regardless of the inner element, and a
+ * node inside it therefore means "the user is typing a prompt".
+ * @returns true when the active element belongs to the composer editor.
  */
-function lastCompletedTurn(turnEnds: ReadonlyMap<number, number>): number | undefined {
-  let last: number | undefined
-  for (const turn of turnEnds.keys()) last = turn
-  return last
+function isComposerFocused(): boolean {
+  const active = document.activeElement
+  if (active === null) return false
+  if (active instanceof HTMLTextAreaElement) return true
+  if (!(active instanceof HTMLElement)) return false
+  // The editable host itself, or anything inside it (a chip portal, a decorator).
+  return active.isContentEditable || active.closest('[data-input-scroll]') !== null
 }
 
 /**
- * The suggestion to surface, or `undefined` when none should show: the
- * `suggestPrompt` projection answers the session's latest completed turn while
- * the agent is idle and the draft is empty.
+ * The suggestion to surface, or `undefined` when none should show.
+ *
+ * `dsh >= 0.2.0` removed `turnEnds` from the Session snapshot, so the client no
+ * longer has a local map of completed turns to compare against. The pairing is
+ * instead derived from state the host already committed: the `suggestPrompt`
+ * projection carries the turn it answers, and `running` tells us whether a
+ * newer turn is currently in flight. A suggestion is therefore current while
+ * the agent is idle, and is hidden the moment a new turn starts (which is when
+ * the stale text would otherwise linger under a fresh draft).
  * @param projection - the live `suggestPrompt` projection value.
  * @param running - whether the session agent is mid-turn.
- * @param lastTurn - the session's latest completed turn.
  * @param draft - the current composer draft.
  * @returns the suggestion text to surface, or `undefined` to show nothing.
  */
 function currentSuggestion(
   projection: SuggestPromptProjection | undefined,
   running: boolean,
-  lastTurn: number | undefined,
   draft: string,
 ): string | undefined {
   if (running) return undefined
   if (projection === null || projection === undefined) return undefined
-  if (lastTurn === undefined || projection.turn !== lastTurn) return undefined
   if (draft.trim() !== '') return undefined
   return projection.text
 }
@@ -103,10 +130,9 @@ export function GhostSuggestion({
 }: GhostSuggestionProps) {
   const projection = useProjection('suggestPrompt')
   const running = useSession(s => s.running)
-  const lastTurn = useSession(s => lastCompletedTurn(s.turnEnds))
   const draft = useInput(s => s.draft)
 
-  const text = currentSuggestion(projection, running, lastTurn, draft)
+  const text = currentSuggestion(projection, running, draft)
 
   // A malformed configured shortcut degrades to the default Tab matcher
   // instead of disabling accept entirely.
@@ -116,14 +142,19 @@ export function GhostSuggestion({
   )
 
   // Accept the suggestion into the draft (editable) on the configured
-  // shortcut while the composer textarea holds focus. Intercepting Tab here
-  // is what prevents the browser from moving focus instead.
+  // shortcut while the composer editor holds focus. Intercepting Tab here is
+  // what stops the browser from moving focus instead of adopting the text.
+  //
+  // Focus detection must accept BOTH composer shapes: `dsh >= 0.2.0` replaced
+  // the `<textarea>` with a Lexical `contenteditable` host, so an
+  // `instanceof HTMLTextAreaElement` test never matches on a current build and
+  // Tab silently did nothing.
   useEffect(() => {
     if (text === undefined) return
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.isComposing) return
       if (!acceptMatcher(event)) return
-      if (!(document.activeElement instanceof HTMLTextAreaElement)) return
+      if (!isComposerFocused()) return
       event.preventDefault()
       inputActions.setDraft(text)
     }

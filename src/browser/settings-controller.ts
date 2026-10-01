@@ -1,22 +1,26 @@
 /**
  * The suggest-prompt settings card's staged form over the `suggest-prompt`
- * settings namespace. Edits are staged until save; a save writes the staged
- * route pair into the user settings document (the host plugin re-resolves its
- * config from the section, so the next completed turn uses the new model).
+ * profile entry. Edits are staged until save; a save writes the staged route
+ * pair back through the entry's config form (the host plugin re-resolves its
+ * config from the entry, so the next completed turn uses the new model).
  *
- * The card's dropdowns read the `llm-pi-ai` settings namespace (the installed
- * provider catalog) read-only: provider names are its `providers` keys and the
- * model list is the selected provider's `models[].id`. A provider without an
- * explicit model list falls back to a free-text model field.
- * @module @studyzy/dsh-client-ui-suggest-prompt/settings-controller
+ * The card's dropdowns read sibling entries (`llm-pi-ai`, `llm-deepseek`) from
+ * the same config-form seam read-only: provider names are the `llm-pi-ai`
+ * `providers` keys and the model list is the selected provider's `models[].id`.
+ * A provider without an explicit model list falls back to a free-text model
+ * field.
+ * @module @studyzy/dsh-suggest-prompt/settings-controller
  */
 
-import { createSnapshotStore, type SettingsScope, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 
 /**
- * Settings namespace of the suggest-prompt host plugin. Spelled here rather
- * than imported: a client package must not depend on a Host package, and the
- * host plugin that owns it spells the same value.
+ * Settings namespace of the suggest-prompt host plugin. In `dsh >= 0.2.0` a
+ * plugin's settings namespace IS its profile entry id, so this is the id the
+ * bundle patch mounts the host plugin under. Spelled here rather than imported:
+ * a client package must not depend on a Host package, and the host plugin that
+ * owns it spells the same value.
  */
 export const SUGGEST_PROMPT_NS = 'suggest-prompt'
 
@@ -121,7 +125,7 @@ interface StagedEdit {
   clear: boolean
 }
 
-/** Bridges the `suggest-prompt` scope onto the card's staged form. */
+/** Bridges the entry config forms onto the card's staged form. */
 export class SuggestPromptCardController {
   private readonly staged = new Map<SuggestPromptEditField, StagedEdit>()
   private readonly store: SnapshotStore<SuggestPromptCardState>
@@ -130,28 +134,28 @@ export class SuggestPromptCardController {
   private failed = false
 
   /**
-   * @param scope - the bound settings scope for the `suggest-prompt` namespace.
-   * @param catalogScope - the bound read-only scope for the `llm-pi-ai` provider catalog.
-   * @param deepSeekScope - the bound read-only scope for the built-in DeepSeek adapter.
+   * @param form - the config form of the `suggest-prompt` entry.
+   * @param catalogForm - the read-only form for the `llm-pi-ai` provider catalog.
+   * @param deepSeekForm - the read-only form for the built-in DeepSeek adapter.
    */
   constructor(
-    private readonly scope: SettingsScope<SuggestPromptSettings>,
-    private readonly catalogScope: SettingsScope<PiAiProviderCatalog>,
-    private readonly deepSeekScope: SettingsScope<DeepSeekCatalog>,
+    private readonly form: ConfigForm<SuggestPromptSettings>,
+    private readonly catalogForm: ConfigForm<PiAiProviderCatalog>,
+    private readonly deepSeekForm: ConfigForm<DeepSeekCatalog>,
   ) {
     this.store = createSnapshotStore(this.projection())
-    // Keep the disposers: a scope outlives the card's fiber (it binds on the
-    // plugin's lifecycle), so dropping them would leave the controller's
-    // publish wired into every scope after this plugin unloads.
+    // Keep the disposers: a config form outlives the card's fiber (it is owned
+    // by ui-settings), so dropping them would leave the controller's publish
+    // wired into every form after this plugin unloads.
     this.unsubscribers = [
-      scope.subscribe(() => { this.publish() }),
-      catalogScope.subscribe(() => { this.publish() }),
-      deepSeekScope.subscribe(() => { this.publish() }),
+      form.subscribe(() => { this.publish() }),
+      catalogForm.subscribe(() => { this.publish() }),
+      deepSeekForm.subscribe(() => { this.publish() }),
     ]
   }
 
   /**
-   * Stop observing the bound scopes. Call once when the owning fiber unloads.
+   * Stop observing the bound forms. Call once when the owning fiber unloads.
    */
   dispose(): void {
     for (const unsubscribe of this.unsubscribers) unsubscribe()
@@ -183,7 +187,7 @@ export class SuggestPromptCardController {
 
   /** Publish the card state projection. */
   private projection(): SuggestPromptCardState {
-    const snapshot = this.scope.getSnapshot()
+    const snapshot = this.form.getSnapshot()
     const section = (snapshot.value ?? {}) as Partial<SuggestPromptSettings>
     const providerOptions = this.catalogProviderOptions()
     const effectiveProvider = this.effectiveProvider(section)
@@ -225,7 +229,7 @@ export class SuggestPromptCardController {
     }
   }
 
-  /** The provider whose model list the card offers: the staged pick, else the section value. */
+  /** The provider whose model list the card offers: the staged pick, else the entry value. */
   private effectiveProvider(section: Partial<SuggestPromptSettings>): string {
     const staged = this.staged.get('provider')
     if (staged !== undefined) return staged.clear ? '' : staged.text.trim()
@@ -235,14 +239,14 @@ export class SuggestPromptCardController {
   /** Provider options: the pi-ai catalog routes plus the built-in DeepSeek route. */
   private catalogProviderOptions(): RouteOption[] {
     const options: RouteOption[] = []
-    if (this.deepSeekScope.getSnapshot().status === 'ready') {
+    if (this.deepSeekForm.getSnapshot().status === 'ready') {
       options.push({ value: DEEPSEEK_PROVIDER, label: 'DeepSeek' })
     }
-    // Only read the catalog once its namespace is ready: a scope that is still
+    // Only read the catalog once its namespace is ready: a form that is still
     // loading or unavailable carries no providers, and treating that as "no
     // providers installed" would make the dropdown (and the card's model
     // selectability) lie about what the deployment offers.
-    const catalog = this.catalogScope.getSnapshot()
+    const catalog = this.catalogForm.getSnapshot()
     if (catalog.status === 'ready' && catalog.value?.providers !== undefined) {
       for (const route of Object.keys(catalog.value.providers).sort()) {
         options.push({ value: route, label: route })
@@ -255,23 +259,23 @@ export class SuggestPromptCardController {
   private catalogModels(provider: string): RouteOption[] {
     if (provider === '') return []
     const models = provider === DEEPSEEK_PROVIDER
-      ? this.deepSeekScope.getSnapshot().value?.models
-      : this.catalogScope.getSnapshot().status === 'ready'
-        ? this.catalogScope.getSnapshot().value?.providers?.[provider]?.models
+      ? this.deepSeekForm.getSnapshot().value?.models
+      : this.catalogForm.getSnapshot().status === 'ready'
+        ? this.catalogForm.getSnapshot().value?.providers?.[provider]?.models
         : undefined
     return models === undefined ? [] : models.map(model => ({ value: model.id, label: model.id }))
   }
 
   /** The composition-layer value one field reverts to once cleared. */
   private baseValue(field: SuggestPromptEditField): string {
-    const base = this.scope.getSnapshot().base as Partial<SuggestPromptSettings> | undefined
+    const base = this.form.getSnapshot().base as Partial<SuggestPromptSettings> | undefined
     const value = base?.[field]
     return typeof value === 'string' ? value : ''
   }
 
   /** Whether the user document layer carries this field (marks it overridden). */
   private stored(field: SuggestPromptEditField): boolean {
-    const user = this.scope.getSnapshot().user as Record<string, unknown> | undefined
+    const user = this.form.getSnapshot().user as Record<string, unknown> | undefined
     return user !== undefined && Object.hasOwn(user, field)
   }
 
@@ -285,10 +289,10 @@ export class SuggestPromptCardController {
     // model for the new provider.
     if (field === 'provider') {
       const provider = edit.clear ? '' : edit.text.trim()
-      const section = (this.scope.getSnapshot().value ?? {}) as Partial<SuggestPromptSettings>
+      const section = (this.form.getSnapshot().value ?? {}) as Partial<SuggestPromptSettings>
       // The effective model: the staged one, else the committed one.
       const stagedModel = this.staged.get('model')
-      const model = stagedModel?.clear ? '' : (stagedModel?.text.trim() !== undefined ? stagedModel.text.trim() : this.stringValue(section.model))
+      const model = stagedModel === undefined ? this.stringValue(section.model) : stagedModel.clear ? '' : stagedModel.text.trim()
       if (!this.modelServes(model, provider)) {
         // The previously chosen model does not exist on the new provider, so it
         // will fail the next generation as UNKNOWN_MODEL. Drop the staged model
@@ -317,31 +321,25 @@ export class SuggestPromptCardController {
     return typeof value === 'string' ? value : ''
   }
 
-  /** Write every staged edit, then re-seed from what the host accepted. */
+  /**
+   * Write every staged edit, then re-seed from what the host accepted.
+   *
+   * The write contract ({@link ConfigForm.set}/{@link ConfigForm.unset})
+   * resolves even when the document rejected the value — it folds/reloads
+   * instead of throwing — so the edit is verified by reading the section back
+   * after each write, not by relying on the promise to reject. A transport
+   * failure does reject, which is the `catch` below.
+   */
   private async save(): Promise<void> {
-    // Snapshots are assumed settled only after the host writes resolve. The
-    // write contract ({@link SettingsScope.set}/{@link SettingsScope.unset})
-    // resolves even when the document rejected the value — it folds/re-reloads
-    // instead of throwing — so the edit must be verified by reading the section
-    // back after each write, not by relying on the promise to reject.
     const writes = [...this.staged].flatMap(([field, edit]): Array<{
       field: SuggestPromptEditField
-      run: () => Promise<void>
-      verify: () => boolean
+      run: () => Promise<boolean>
     }> => {
       if (edit.clear) {
-        return this.stored(field)
-          ? [{ field, run: () => this.scope.unset(field), verify: () => !this.stored(field) }]
-          : []
+        return this.stored(field) ? [{ field, run: () => this.form.unset(field) }] : []
       }
       const value = edit.text.trim()
-      return value === ''
-        ? []
-        : [{
-          field,
-          run: () => this.scope.set(field, value),
-          verify: () => (this.scope.getSnapshot().value as Partial<SuggestPromptSettings> | undefined)?.[field] === value,
-        }]
+      return value === '' ? [] : [{ field, run: () => this.form.set(field, value) }]
     })
     // An edit that resolves to no write (an empty draft, or a clear of a field
     // the user layer never carried) must not keep the form dirty forever: it
@@ -359,10 +357,9 @@ export class SuggestPromptCardController {
     let landed = true
     for (const write of writes) {
       try {
-        await write.run()
-        // Verification must read AFTER the write settles so the host's fold or
-        // reload has landed in the mirror.
-        if (!write.verify()) landed = false
+        // The form resolves `false` for a refusal (and reloads Host state), so
+        // the result — not just the absence of a throw — decides the outcome.
+        if (!await write.run()) landed = false
       } catch {
         landed = false
       }
@@ -377,3 +374,6 @@ export class SuggestPromptCardController {
     this.store.set(this.projection())
   }
 }
+
+/** The snapshot type one bound config form carries (re-exported for tests). */
+export type SuggestPromptFormSnapshot = ConfigFormSnapshot<SuggestPromptSettings>

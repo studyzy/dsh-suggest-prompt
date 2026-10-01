@@ -10,12 +10,13 @@
  *   does not serve, so the next generation cannot fail as UNKNOWN_MODEL.
  */
 import { describe, expect, it, vi } from 'vitest'
-import type { SettingsScope, SettingsScopeSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 
-// The published runtime bundle bootstraps through window.__ModuleLoader__, which
-// jsdom does not provide; stub the one value import the controller uses so the
-// store keeps its simple synchronous set/get contract.
-vi.mock('@deepseek-ai/dsh-client-runtime/client', () => ({
+// The published store bundle is ESM consumed through the browser module table;
+// stub the one value import the controller uses so the store keeps its simple
+// synchronous set/get contract under jsdom.
+vi.mock('@deepseek-ai/dsh-client-store', () => ({
   createSnapshotStore: <T>(init: T): SnapshotStore<T> => {
     let state = init
     const listeners = new Set<() => void>()
@@ -32,19 +33,19 @@ import { SuggestPromptCardController } from '../src/browser/settings-controller.
 
 /** Minimal fake scope with a scriptable user layer and write behavior. */
 function makeScope<T>(init: {
-  status?: SettingsScopeSnapshot<T>['status']
+  status?: ConfigFormSnapshot<T>['status']
   value?: T
   base?: unknown
   user?: unknown
   writable?: boolean
-} = {}): SettingsScope<T> & {
+} = {}): ConfigForm<T> & {
   fail: { set: boolean; unset: boolean }
   /** Set the snapshot status, notifying subscribers (as a host commit would). */
-  setStatus(status: SettingsScopeSnapshot<T>['status']): void
+  setStatus(status: ConfigFormSnapshot<T>['status']): void
   /** Active subscribers (for asserting dispose removes them). */
   listeners: Set<() => void>
 } {
-  const state: SettingsScopeSnapshot<T> = {
+  const state: ConfigFormSnapshot<T> = {
     status: init.status ?? 'ready',
     value: init.value,
     base: init.base,
@@ -62,23 +63,27 @@ function makeScope<T>(init: {
     fail,
     setStatus: (status) => { state.status = status; publish() },
     listeners,
-    // Scriptable writes: apply to the section unless the test marked the write
-    // to fail — mirroring the host scope that resolves (not rejects) on a
-    // refused value after reloading.
+    // Scriptable writes: apply to the section and report acceptance unless the
+    // test marked the write to fail. A refused write resolves `false` (the
+    // ConfigForm contract) after reloading Host state, so the controller must
+    // honor the RESULT rather than relying on a rejection.
     set: async (field, value) => {
-      if (fail.set) { state.status = 'ready'; publish(); return }
+      if (fail.set) { state.status = 'ready'; publish(); return false }
       const section = state.value as Record<string, unknown> | undefined ?? {}
       section[field] = value
       state.value = section as T
       publish()
+      return true
     },
     unset: async (field) => {
-      if (fail.unset) { state.status = 'ready'; publish(); return }
+      if (fail.unset) { state.status = 'ready'; publish(); return false }
       const section = state.value as Record<string, unknown> | undefined ?? {}
       delete section[field]
       state.value = section as T
       publish()
+      return true
     },
+    mutate: async () => true,
   }
 }
 
@@ -89,7 +94,7 @@ function buildController(over: {
   user?: { provider?: string; model?: string; acceptKey?: string }
   providers?: Record<string, { models?: Array<{ id: string }> }>
   deepseekModels?: Array<{ id: string }>
-  catalogStatus?: SettingsScopeSnapshot<{ providers?: Record<string, { models?: Array<{ id: string }> }> }>['status']
+  catalogStatus?: ConfigFormSnapshot<{ providers?: Record<string, { models?: Array<{ id: string }> }> }>['status']
 } = {}) {
   const scope = makeScope<{ provider?: string; model?: string; acceptKey?: string }>({
     value: over.value,

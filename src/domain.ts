@@ -42,6 +42,24 @@ export interface SuggestPromptSuggested extends SuggestPromptSuggestion {
   readonly version: 1
 }
 
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    /**
+     * Programmatic input from this capability's own bounded auxiliary call.
+     * `dsh >= 0.2.0` removed the shared catch-all `plugin` source kind: the
+     * union is merge-extensible and each producer declares its own kind, so
+     * this plugin names itself.
+     */
+    'suggest-prompt': {
+      readonly kind: 'suggest-prompt'
+      /** Plugin package that produced the message. */
+      readonly plugin: string
+      /** Which part of the auxiliary exchange this message carries. */
+      readonly form: 'transcript'
+    }
+  }
+}
+
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /** Log-only pre-dispatch record of one suggest-prompt model request. */
