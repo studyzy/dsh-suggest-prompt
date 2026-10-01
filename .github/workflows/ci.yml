@@ -12,15 +12,15 @@ jobs:
       matrix:
         node: [22, 24]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # No explicit version: pnpm/action-setup reads `packageManager` from
       # package.json (pnpm@9.15.0). Passing `version` here while package.json
       # also pins `packageManager` trips the action's version-mismatch guard
       # (ERR_PNPM_BAD_PM_VERSION), so let the field drive it.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
@@ -60,13 +60,13 @@ jobs:
     # scope, so the job must opt into that environment to see it.)
     environment: DEEPSEEK_API_KEY
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # No explicit version (reads packageManager pnpm@9.15.0) — same reason
       # as the build job; we upgrade pnpm to ≥10 below for dsh's use.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
@@ -124,7 +124,7 @@ jobs:
       # so a ghost-timeout failure can be diagnosed from the DOM, not guessed at.
       - name: Upload e2e failure artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-failure
           path: .artifacts/**
