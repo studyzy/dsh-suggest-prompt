@@ -128,37 +128,69 @@ export function runDSHPlugin(profile: string, args: readonly string[], cwd: stri
 }
 
 /**
- * Open Settings → Built-in plugins, select the suggestion card's tab, set the
- * provider/model, save, and close.
+ * Open the Plugins page, open the suggestion card's detail pane, set the
+ * provider/model, save, and go back to the list.
  *
- * `dsh >= 0.2.0` moved the plugin settings surface from an expandable card in a
- * "Plugins" section (`settings.plugin.item`) to a `role="tab"` seat in the
- * "Built-in plugins" section (`settings.plugins.tab`). The section is labelled
- * 内置插件, and the tab carries this plugin's own localized label.
+ * `dsh >= 0.2.0` first seated this card as a `role="tab"` under
+ * Settings → 内置插件 (`settings.plugins.tab`); the plugin now contributes to
+ * the **Plugins page** instead, through two slots it renders from two different
+ * entry points:
  *
- * The card's own field ids (`#suggest-prompt-settings-provider` / `-model`) are
- * unchanged, so only the navigation differs.
+ *   - `plugins.item`  → the card's own seat in the 官方 group, as
+ *     `<li data-plugin-item="suggest-prompt">`; its detail page
+ *     (`<div data-plugin-item-detail="suggest-prompt">`) holds the form inside
+ *     `<section data-plugin-config>`.
+ *   - `plugins.bundle.config` → keyed by the **package name**, so it renders
+ *     inside the 已安装 package card's page
+ *     (`<div data-plugin-detail="@studyzy/dsh-suggest-prompt">`) as a sibling
+ *     `<section data-plugin-config>` above 包含的组件 — and only there.
  *
- * The card itself still renders collapsed (a disclosure header with
- * `aria-expanded`), so its fields only exist after the header is clicked.
+ * This helper drives the 官方 (`plugins.item`) route: its id is the plugin's own
+ * namespace (`suggest-prompt`), which is stable across profiles, whereas the
+ * 已安装 route needs both the exact package name and a non-empty
+ * `plugins.bundle.config` ledger (`configured: ledger.bundles.has(pkg.name)`) —
+ * a registration bug there renders no section at all and the helper would hang
+ * on a missing field rather than on a missing click target. The 已安装 route is
+ * worth a separate assertion (it is the one the docs' checklist calls out), but
+ * it is the more fragile of the two to route a whole suite through.
+ *
+ * The form itself is untouched by the move: the field ids
+ * (`#suggest-prompt-settings-provider` / `-model`) and the 保存 button are the
+ * same as before. What is gone is the accordion — the detail page IS the
+ * expanded state, so there is no "展开: 建议提示词" disclosure header to click.
+ *
+ * Entrance: the 插件 panel is a sidebar entry, not a settings section — a
+ * `<button aria-label="插件">` inside the sidebar's `<nav aria-label="全局面板">`
+ * (panel id `plugins`). It is targetable by role+name, and it must be selected
+ * before any card exists in the DOM.
  */
 export async function setSuggestionModel(page: Page, provider: string, model: string): Promise<void> {
-  await page.getByRole('button', { name: '设置', exact: true }).click()
-  const settings = page.getByRole('dialog', { name: '设置' })
-  await settings.waitFor({ timeout: 10_000 })
-  await settings.getByRole('button', { name: '内置插件' }).click()
+  // The sidebar's panel row: `aria-label` is the panel label ("插件"/"Plugins").
+  // Scoped to the panel nav so a future "插件" label elsewhere cannot steal the
+  // click. Selecting the panel unmounts/remounts the page (the plugin resets to
+  // the list view whenever the active panel changes away), so this click is the
+  // whole entrance — no settings dialog is involved any more.
+  const panel = page.getByRole('navigation', { name: '全局面板' })
+  const panelButton = panel.getByRole('button', { name: '插件', exact: true })
+  await panelButton.waitFor({ timeout: 15_000 })
+  await panelButton.click()
 
-  // A tab mounts only once selected, so click it before touching its fields.
-  const tab = settings.getByRole('tab', { name: '建议提示词' })
-  await tab.waitFor({ timeout: 10_000 })
-  await tab.click()
+  // The 官方 group's card for this plugin. Clicking it opens the item detail
+  // (`data-plugin-item-detail`), whose config section holds the full form.
+  // `CardHead` opens on the title button, so click the card title rather than
+  // the `<li>`: the row itself has no click handler.
+  const itemCard = page.locator('li[data-plugin-item="suggest-prompt"]')
+  await itemCard.waitFor({ timeout: 15_000 })
+  await itemCard.getByRole('button', { name: '建议提示词' }).click()
 
-  // The card mounts collapsed; expand it so the route fields render at all.
-  const header = settings.getByRole('button', { name: '展开: 建议提示词' })
-  await header.waitFor({ timeout: 10_000 })
-  await header.click()
+  // Wait for the detail page itself, then for the section that owns the form:
+  // both are rendered by the plugin-manager page, not by the card, so waiting
+  // on them distinguishes "the page did not open" from "the form did not mount".
+  await page.locator('div[data-plugin-item-detail="suggest-prompt"]').waitFor({ timeout: 15_000 })
+  const config = page.locator('section[data-plugin-config]')
+  await config.waitFor({ timeout: 15_000 })
 
-  const providerSelect = settings.locator('#suggest-prompt-settings-provider')
+  const providerSelect = config.locator('#suggest-prompt-settings-provider')
   await providerSelect.waitFor({ timeout: 10_000 })
   await providerSelect.selectOption(provider)
 
@@ -166,7 +198,7 @@ export async function setSuggestionModel(page: Page, provider: string, model: st
   // explicit models; a provider without one (notably `deepseek-official` in a
   // cold isolated $DSH_HOME) degrades to a free-text input. Type into whichever
   // shape rendered instead of assuming the dropdown.
-  const modelControl = settings.locator('#suggest-prompt-settings-model')
+  const modelControl = config.locator('#suggest-prompt-settings-model')
   await modelControl.waitFor({ timeout: 10_000 })
   if (await modelControl.evaluate(el => el.tagName.toLowerCase()) === 'select') {
     await modelControl.selectOption(model)
@@ -174,11 +206,18 @@ export async function setSuggestionModel(page: Page, provider: string, model: st
     await modelControl.fill(model)
   }
 
-  await settings.getByRole('button', { name: '保存', exact: true }).click()
-  // Saving does not close the settings dialog; click its header close button
-  // (the "x" in the top-right corner) so the composer is reachable again.
-  await settings.getByRole('button', { name: '关闭' }).click()
-  await settings.waitFor({ state: 'detached', timeout: 15_000 })
+  // The card's own footer, not a shared `SettingsForm`: its button copy is this
+  // plugin's dictionary (`save` → 保存), scoped to the config section so the
+  // page's own actions (启用/卸载/…) cannot match.
+  await config.getByRole('button', { name: '保存', exact: true }).click()
+
+  // Saving does not leave the page. The composer is unreachable while a detail
+  // page is open, so click the crumb back to the list — its accessible name is
+  // the plugin-manager dictionary's `backToList` ("返回插件列表"), rendered as a
+  // `<button aria-label="返回插件列表">` at the top of every detail page.
+  await page.getByRole('button', { name: '返回插件列表' }).click()
+  await page.locator('div[data-plugin-item-detail="suggest-prompt"]')
+    .waitFor({ state: 'detached', timeout: 15_000 })
 }
 
 /** Failure evidence goes to the gitignored .artifacts/. */

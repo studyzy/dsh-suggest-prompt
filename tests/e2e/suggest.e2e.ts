@@ -7,9 +7,10 @@
  *   3.  `dsh web --port <free> --no-open` is spawned against that home;
  *   4.  Playwright drives the WebUI: walks the first-run onboarding to store
  *       the DeepSeek key, connects a workspace, sets the suggestion model to
- *       DeepSeek Flash in the "建议提示词" tab of the Built-in plugins settings
- *       section, then sends a math question and asserts that a ghost next-prompt
- *       suggestion appears in the composer after the agent finishes.
+ *       DeepSeek Flash on the "建议提示词" card of the sidebar's 插件 page (its
+ *       detail page, reached through `plugins.item` — no settings dialog), then
+ *       sends a math question and asserts that a ghost next-prompt suggestion
+ *       appears in the composer after the agent finishes.
  *   5.  It then asserts the two composer regressions stay fixed: the native
  *       placeholder is hidden while a suggestion shows (no double ghost text),
  *       and Tab adopts the suggestion into the draft.
@@ -20,8 +21,9 @@
  * first-run credential step mounts and we exercise the real UI path.
  *
  * Targets `dsh >= 0.2.0-rc.2`, whose composer is a Lexical `contenteditable`
- * host (not a `<textarea>`) and whose plugin settings surface is a
- * `settings.plugins.tab` seat (not an expandable `settings.plugin.item` card).
+ * host (not a `<textarea>`) and whose plugin settings surface is the sidebar's
+ * 插件 panel (`plugins.item` / `plugins.bundle.config` slot contributions), not a
+ * settings-dialog tab.
  *
  * Run: `pnpm test:e2e` (requires a real DEEPSEEK_API_KEY; skipped otherwise).
  * Excluded from the default `pnpm test` via vitest.e2e.config.ts.

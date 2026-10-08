@@ -73,7 +73,7 @@ dsh plugin --profile web add https://github.com/studyzy/dsh-suggest-prompt.git
 - `Alt+Slash`（即 `Alt+/`）
 - `Ctrl+Enter`
 
-修改方式：在 WebUI「设置 → **内置插件**」的「建议提示词」标签页里有一个**接受快捷键**输入框。点击它获得焦点后，直接按下你想用的按键或组合键，按下的键就会显示在框里（先按 `Alt` 再按 `Slash` → 显示 `Alt+Slash`；组合如 `Ctrl+Alt+X` 会显示为三个键）。保存后写入当前 profile 的 `suggest-prompt` entry，下一回合生效。若只想用回默认 `Tab`，点输入框旁的「重置」即可。也可在 profile 补丁层（`~/.dsh/profiles/web/cordis.patch.yml`）用 `- insert:` 覆盖宿主插件的 `config.acceptKey`。
+修改方式：在 WebUI **「插件」页**的「建议提示词」表单里有一个**接受快捷键**输入框（两个入口：「官方」分组里的「建议提示词」卡片，以及「已安装」分组里 `@studyzy/dsh-suggest-prompt` 包卡片详情页「包含的组件」上方的同一张表单，两处草稿互通）。点击它获得焦点后，直接按下你想用的按键或组合键，按下的键就会显示在框里（先按 `Alt` 再按 `Slash` → 显示 `Alt+Slash`；组合如 `Ctrl+Alt+X` 会显示为三个键）。保存后写入当前 profile 的 `suggest-prompt` entry，下一回合生效。若只想用回默认 `Tab`，点输入框旁的「重置」即可。也可在 profile 补丁层（`~/.dsh/profiles/web/cordis.patch.yml`）用 `- insert:` 覆盖宿主插件的 `config.acceptKey`。
 
 快捷键触发规则：
 
@@ -100,7 +100,7 @@ A：大概率是"本回合无建议"（模型认为下一步不明显或回复�
 - 辅助模型路由可正常访问（可看 dsh 日志里是否有 `suggest-prompt` 相关的 warn）。
 
 **Q：建议出现得太慢？**
-A：辅助模型每次回答完成后才发起，首次可能需要 10–30 秒。可在 WebUI「设置 → 内置插件」的建议提示词标签页里把 `provider`/`model` 指向更快的模型，或在补丁层降低 `maxOutputTokens`。
+A：辅助模型每次回答完成后才发起，首次可能需要 10–30 秒。可在 WebUI「插件」页的「建议提示词」表单里把 `provider`/`model` 指向更快的模型，或在补丁层降低 `maxOutputTokens`。
 
 **Q：建议内容不对 / 太长 / 乱码？**
 A：插件已做脱敏、净化、语义过滤和长度截断（`maxSuggestionChars`）。仍不满意可调小 `maxSuggestionChars`，或换用推理能力更强的建议模型。
@@ -113,7 +113,7 @@ A：确认焦点确实在输入框 textarea 内（点击输入框再按），且
 
 ## 配置速查
 
-日常的**建议模型路由（provider / model）**与**采纳快捷键（acceptKey）在 WebUI「设置 → 内置插件」的「建议提示词」标签页里配置**，保存后下一回合生效，无需改文件。以下资源上限字段由 bundle 自带默认值，**通常无需改动**；需要自定义时在 profile 补丁层用 `- insert:` 覆盖：
+日常的**建议模型路由（provider / model）**与**采纳快捷键（acceptKey）在 WebUI「插件」页的「建议提示词」表单里配置**（入口同上，两处是同一张表单、草稿互通，保存一次写入），保存后下一回合生效，无需改文件。以下资源上限字段由 bundle 自带默认值，**通常无需改动**；需要自定义时在 profile 补丁层用 `- insert:` 覆盖：
 
 | 字段 | 作用 | 默认 |
 |---|---|---|
@@ -123,8 +123,8 @@ A：确认焦点确实在输入框 textarea 内（点击输入框再按），且
 | `maxRecentTurns` | 发给建议模型的最近回合数 | `1`（只取最后一轮） |
 | `maxTranscriptChars` | 转录字符预算 | `12000` |
 | `maxSuggestionChars` | 建议可见字符上限 | `240` |
-| `acceptKey` | 采纳快捷键（界面卡片可配置） | `Tab` |
+| `acceptKey` | 采纳快捷键（「插件」页的表单可配置） | `Tab` |
 
-> `provider` / `model` 也能写在补丁层（设置的一方覆盖主请求路由对应字段，省略则继承），但通常用界面卡片即可。
+> `provider` / `model` 也能写在补丁层（设置的一方覆盖主请求路由对应字段，省略则继承），但通常用「插件」页的表单即可。
 
 完整字段与说明见 [README.md](README.md) 的「配置」一节。

@@ -8,6 +8,48 @@ Because this plugin is built against a specific `dsh` release and the harness
 changes internal contracts between releases, each entry names the harness
 version it targets.
 
+## [Unreleased]
+
+Targets `dsh 0.2.0-rc.2` (unchanged): the move below only changes which slots the
+client card registers into, not the harness contract.
+
+### Changed
+
+- **The settings card moved from the Settings page to the Plugins page.** It is no
+  longer a `settings.plugins.tab` entry. The same `SettingsCard` component is now
+  registered twice and appears at **two entry points of the Plugins page**: a
+  `plugins.item` card (`id: 'suggest-prompt'`) in the official-plugin group, and a
+  `plugins.bundle.config` entry keyed by the package name
+  (`@studyzy/dsh-suggest-prompt`) on the detail page of the installed
+  `@studyzy/dsh-suggest-prompt` package card, above its "Components" (包含的组件)
+  list. Both registrations are required: a profile bundle that is both a `bundles`
+  member and a `dependencies` member is also rendered as an installed package
+  card, and without the keyed registration that card's config section does not
+  render at all. The keyed slot is addressed by **package name**, not by `id` or
+  the settings namespace — the wrong key fails silently.
+- The two surfaces share **one** controller face (built once, not per
+  registration), so a draft edited at one entry point is visible at the other and
+  Save is a single write. A face built per surface would leave each entry point
+  with its own draft table and silently write the wrong one.
+- `SettingsCard` now discriminates on `view`: `plugins.item` renders it as
+  `summary` (the card's one-line description, from the `description` locale key,
+  in a dedicated hook-free component) and as `page`, while
+  `plugins.bundle.config` only asks for `page`. The root element is no longer an
+  `<li>`, which is invalid inside the `<p>` that hosts the summary.
+- Docs (`README.md`, `USAGE.zh.md`, [AGENTS.md](AGENTS.md)) now name the two
+  Plugins-page entry points as the configuration path.
+
+### Fixed
+
+- Two entry points of the Plugins page no longer render two independent copies of
+  the form: they share one draft table and one save path.
+
+### Known issues
+
+- The screenshots (`assets/suggest-prompt.png`, `assets/config.png`) still show
+  the pre-move Settings → Built-in plugins flow; the `config.png` screenshot in
+  particular is out of date for the Plugins page and still needs a refresh.
+
 ## [1.1.0] - 2026-10-01
 
 Adapted to `dsh 0.2.0-rc.2`. This is a **breaking** release for anyone running an

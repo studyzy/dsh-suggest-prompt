@@ -57,6 +57,8 @@
     "build": "tsc -p tsconfig.json && tsdown",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "verify:client": "node scripts/verify-client-bundle.mjs",
+    "check": "pnpm typecheck && pnpm test && pnpm build && pnpm verify:client",
     "test:e2e": "vitest run -c vitest.e2e.config.ts tests/e2e/suggest.e2e.ts",
     "test:e2e:local": "vitest run -c vitest.e2e.config.ts tests/e2e/suggest-local.e2e.ts"
   },

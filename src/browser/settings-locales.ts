@@ -18,8 +18,6 @@ export type SuggestPromptSettingsLocaleKey =
   | 'overridden'
   | 'reset'
   | 'readOnly'
-  | 'expand'
-  | 'collapse'
   | 'save'
   | 'saving'
   | 'discard'
@@ -47,8 +45,6 @@ export const en: Record<SuggestPromptSettingsLocaleKey, string> = {
   overridden: 'overridden',
   reset: 'Reset',
   readOnly: 'Settings are read-only in this deployment.',
-  expand: 'Expand',
-  collapse: 'Collapse',
   save: 'Save',
   saving: 'Saving…',
   discard: 'Discard',
@@ -71,8 +67,6 @@ export const zh: Record<SuggestPromptSettingsLocaleKey, string> = {
   overridden: '已覆盖',
   reset: '重置',
   readOnly: '当前部署下设置为只读。',
-  expand: '展开',
-  collapse: '收起',
   save: '保存',
   saving: '保存中…',
   discard: '放弃',

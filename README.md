@@ -21,13 +21,13 @@
 
 - **默认轻量**：不配置 `provider` / `model` 时继承主请求最近一次记录的路由，无需为建议单独选模型；需要时也可显式指定任意路由（例如本地 OpenAI 兼容网关）。
 - **免思考、快速便宜**：建议生成默认携带 `reasoningEffort: off`（DeepSeek 序列化为 `thinking: disabled`），不消耗推理预算；模型不支持该参数时自动去掉并重试一次。
-- **界面配置模型路由**：日常只需在 WebUI「设置 → 内置插件」的「建议提示词」标签页里选择建议生成的 provider / model（或跟随会话路由），保存后下一完成回合生效，无需手动改配置文件。
+- **界面配置模型路由**：日常只需在 WebUI「插件」页的「建议提示词」卡片里选择建议生成的 provider / model（或跟随会话路由），保存后下一完成回合生效，无需手动改配置文件。
 - **只发最后一轮**：默认只把最后一轮的用户输入与 AI 最终回答发给建议模型（`maxRecentTurns` 默认为 `1`），中间的工具调用 / 推理过程一律不发送。
 - **有界调用**：字节 / 令牌 / 超时上限、转录长度预算、建议可见字符上限，全部可配置。
 - **安全**：转录在发送前脱敏（密钥形状被掩蔽）；输出净化（控制序列、围栏、引号剥离、单行化）并做语义过滤（元文本、评价套话、助手口吻等被当作「无建议」丢弃）。
 - **无建议是常态**：模型回复为空或不合格时静默跳过，不报错、不写事件、不打扰。
 - **免调用重显**：删回空草稿会重新显示已持久化的建议，不再发新的模型请求。
-- **快捷键可配**：采纳快捷键默认 `Tab`，可在「建议提示词」设置卡片里按实际按键录制（如 `Alt+Slash`、`Ctrl+Enter`）。
+- **快捷键可配**：采纳快捷键默认 `Tab`，可在「插件」页的「建议提示词」表单里按实际按键录制（如 `Alt+Slash`、`Ctrl+Enter`）。
 
 ## 效果预览
 
@@ -76,7 +76,7 @@ dsh plugin --profile web add /path/to/dsh-suggest-prompt
 dsh plugin --profile web add @studyzy/dsh-suggest-prompt
 ```
 
-> 说明：无论哪种来源，装完都是同一个 bundle 层。日常建议模型的 provider / model 通过 WebUI 设置卡片配置（见下「配置」），不需要在安装时手动指定。
+> 说明：无论哪种来源，装完都是同一个 bundle 层。日常建议模型的 provider / model 通过 WebUI 的「插件」页卡片配置（见下「配置」），不需要在安装时手动指定。
 
 ## 配置
 
@@ -84,21 +84,28 @@ dsh plugin --profile web add @studyzy/dsh-suggest-prompt
 
 ### 通过 WebUI 界面配置建议模型（日常）
 
-「设置 → 内置插件」的「建议提示词」标签页。这是**日常配置建议模型的主入口**，无需手动改配置文件：
+「建议提示词」表单在 **「插件」页**上有**两个入口**，渲染的是**同一张表单**：
+
+- **「官方」分组**里的「建议提示词」卡片 —— 点开即可看到表单；
+- **「已安装」分组**里的 `@studyzy/dsh-suggest-prompt` 包卡片 —— 点进详情页后，表单出现在**「包含的组件」上方**。
+
+这是**日常配置建议模型的主入口**，无需手动改配置文件。两个入口共用同一份草稿：在一处改了 provider / model / 快捷键，切到另一处能看到同样的改动；**保存是一次写入**（写入 profile patch 的 `config`，全局层），保存后下一个完成回合生效。
 
 - **Provider / Model**：从已安装的 provider 目录（内置 `DeepSeek` 与 pi-ai 各 provider）中选择建议生成使用的路由；选择「跟随会话路由」则不覆盖，继承主请求路由。
 - **Accept shortcut**：点击输入框获得焦点后，直接按下想用的按键或组合键，按键即录制显示（先按 `Alt` 再按 `Slash` → `Alt+Slash`，`Ctrl+Alt+X` 显示为三个键），无需手动打字。
 - 编辑是暂存式的（带「未保存」标记与「放弃 / 保存」按钮），保存会由界面写入当前 profile 的 `suggest-prompt` entry；**保存后下一个完成回合生效**，无需重启。
 - 下拉只会列出目录中显式声明的模型；某 provider 未声明模型列表时，模型字段退化为自由文本输入。
-- 依赖 harness 的设置能力：没有挂载设置服务的组装（如 headless）不显示此标签页，此时仍可在补丁层配置 `provider` / `model` / `acceptKey`。
+- 依赖 harness 的设置能力：没有挂载设置服务的组装（如 headless）不显示此表单，此时仍可在补丁层配置 `provider` / `model` / `acceptKey`。
 
-只有当宿主能描述该 entry 时标签页才会出现，这要求设置字段在插件 `Config` schema 中标记 `volatile()`（见 [AGENTS.md](AGENTS.md) 的「Version-critical contracts」）。同一标记也让这些值以**活引用**而非普通值传入插件，因此 `resolveSuggestPromptConfig` 会在配置边界统一解包。
+只有当宿主能描述该 entry 时表单才会出现，这要求设置字段在插件 `Config` schema 中标记 `volatile()`（见 [AGENTS.md](AGENTS.md) 的「Version-critical contracts」）。同一标记也让这些值以**活引用**而非普通值传入插件，因此 `resolveSuggestPromptConfig` 会在配置边界统一解包。
 
-![建议提示词设置卡片](assets/config.png)
+![「插件」页上的建议提示词表单](assets/config.png)
+
+> 该截图拍的是搬迁前的「设置 → 内置插件」标签页，内容已过时（见 [CHANGELOG.md](CHANGELOG.md)：「插件」页表单截图待更新）。
 
 ### 补丁层字段（安装即带默认，可覆盖）
 
-以下字段由 bundle 自带的 `cordis.patch.yml` 提供默认值，**通常无需改动**；需要自定义时，在 profile 补丁层（`~/.dsh/profiles/web/cordis.patch.yml`）用 `- insert:` 覆盖同名 entry 的 `config`。`provider` / `model` / `acceptKey` 可在 WebUI 设置卡片中配置；其余字段**不在** WebUI 设置卡片中：
+以下字段由 bundle 自带的 `cordis.patch.yml` 提供默认值，**通常无需改动**；需要自定义时，在 profile 补丁层（`~/.dsh/profiles/web/cordis.patch.yml`）用 `- insert:` 覆盖同名 entry 的 `config`。`provider` / `model` / `acceptKey` 可在 WebUI「插件」页的「建议提示词」表单中配置；其余字段**不在**该表单中：
 
 | 字段 | 含义 | 默认值 |
 |---|---|---|
@@ -188,13 +195,13 @@ An automatic "next line" companion: after the AI answers, it predicts what you'd
 
 - **Lightweight by default**: without `provider` / `model` the suggestion inherits the route of the most recently logged main request — no model to pick just for suggestions; set them explicitly to route anywhere (for example a local OpenAI-compatible gateway).
 - **No thinking, fast and cheap**: the auxiliary call carries `reasoningEffort: off` by default (DeepSeek serializes it as `thinking: disabled`) so no budget is spent on a chain of thought; models that reject `off` retry once without the field.
-- **Route configured in the WebUI**: day-to-day, pick the suggestion provider/model from the "建议提示词" tab under Settings → Built-in plugins (or keep "follow session route"); saving takes effect on the next completed turn — no manual config-file edits.
+- **Route configured in the WebUI**: day-to-day, pick the suggestion provider/model from the "建议提示词" card on the **Plugins** page (or keep "follow session route"); saving takes effect on the next completed turn — no manual config-file edits.
 - **Last turn only**: by default only the last completed turn's user input and assistant final answer are sent to the suggestion model (`maxRecentTurns` defaults to `1`); intermediate tool calls / reasoning are never included.
 - **Bounded**: byte / token / timeout caps, a transcript budget, and a visible-character cap on the suggestion — all configurable.
 - **Safe**: transcripts are secret-redacted before framing; output is sanitized (control sequences, fences, quotes stripped, single line) and semantically filtered (meta-text, evaluative filler, assistant-voice phrasing are dropped as "no suggestion").
 - **Silent no-suggestion**: an empty or rejectable model reply is skipped quietly — no error, no event, no noise.
 - **Re-arm without a call**: deleting back to an empty draft re-shows the persisted suggestion with no new model request.
-- **Configurable shortcut**: the adopt shortcut is set via `acceptKey` (default `Tab`) and can be recorded from the "建议提示词" settings card (e.g. `Alt+Slash`, `Ctrl+Enter`).
+- **Configurable shortcut**: the adopt shortcut is set via `acceptKey` (default `Tab`) and can be recorded from the "建议提示词" form on the Plugins page (e.g. `Alt+Slash`, `Ctrl+Enter`).
 
 ## Preview
 
@@ -243,7 +250,7 @@ dsh plugin --profile web add /path/to/dsh-suggest-prompt
 dsh plugin --profile web add @studyzy/dsh-suggest-prompt
 ```
 
-> Note: every source ends up as the same bundle layer. The day-to-day suggestion provider/model is configured from the WebUI settings card (see Configuration below) — nothing to set at install time.
+> Note: every source ends up as the same bundle layer. The day-to-day suggestion provider/model is configured from the WebUI card (see Configuration below) — nothing to set at install time.
 
 ## Configuration
 
@@ -251,21 +258,28 @@ Configuration is split in two: the **day-to-day route is set in the UI**, and th
 
 ### Configure the suggestion model in the WebUI (day-to-day)
 
-A "建议提示词" card appears under **Settings → Built-in plugins (内置插件)**. This is the **primary entry point** for choosing the suggestion route — no manual config-file edits:
+The "建议提示词" form has **two entry points on the Plugins page**, and both render the **same form**:
+
+- the "建议提示词" card in the **Official (官方)** group — open it and the form is right there;
+- the `@studyzy/dsh-suggest-prompt` package card in the **Installed (已安装)** group — on its detail page the form sits **above the "Components" (包含的组件) list**.
+
+This is the **primary entry point** for choosing the suggestion route — no manual config-file edits. The two entry points share one draft: change provider / model / shortcut in either one and the other shows the same change; **Save is a single write** (the profile patch's `config`, global layer) and **takes effect on the next completed turn**.
 
 - **Provider / Model**: pick the route the auxiliary call uses from the installed provider catalog (built-in DeepSeek + pi-ai routes); choosing "Follow session route" keeps the main request route.
 - **Accept shortcut**: focus the field, then press the key or key combo you want — the pressed keys are recorded and shown (press `Alt` then `Slash` → `Alt+Slash`; a three-key combo like `Ctrl+Alt+X` displays as three keys), no typing needed.
 - Edits are staged (with an "Unsaved" marker and Discard / Save buttons); saving writes the `suggest-prompt` entry of the active profile, and **takes effect on the next completed turn** — no restart needed.
 - The dropdowns list only explicitly declared models; a provider without a declared model list degrades the model field to free-text input.
-- This rides the harness settings capability: assemblies without a settings service (e.g. headless) do not show the card and keep using `provider` / `model` / `acceptKey` in the patch layer.
+- This rides the harness settings capability: assemblies without a settings service (e.g. headless) do not show the form and keep using `provider` / `model` / `acceptKey` in the patch layer.
 
-The card is only discoverable when the host can describe the entry, which requires the settings-facing fields to be marked `volatile()` in the plugin's `Config` schema (see [AGENTS.md](AGENTS.md), "Version-critical contracts"). That marking is also what makes those values arrive as live references rather than plain values, so `resolveSuggestPromptConfig` unwraps them at the config boundary.
+The form is only discoverable when the host can describe the entry, which requires the settings-facing fields to be marked `volatile()` in the plugin's `Config` schema (see [AGENTS.md](AGENTS.md), "Version-critical contracts"). That marking is also what makes those values arrive as live references rather than plain values, so `resolveSuggestPromptConfig` unwraps them at the config boundary.
 
-![Suggestion prompt settings card](assets/config.png)
+![The suggestion prompt form on the Plugins page](assets/config.png)
+
+> The screenshot shows the pre-move Settings → Built-in plugins tab and is out of date (see [CHANGELOG.md](CHANGELOG.md): the Plugins-page form still needs a fresh screenshot).
 
 ### Patch-layer fields (defaults ship with the bundle, overridable)
 
-The following are provided with defaults by the bundle's own `cordis.patch.yml` and **normally need no changes**; to customize, override the same entry's `config` via `- insert:` in your profile patch layer (`~/.dsh/profiles/web/cordis.patch.yml`). `provider` / `model` / `acceptKey` are editable from the WebUI card; the rest are **not** in the WebUI settings card:
+The following are provided with defaults by the bundle's own `cordis.patch.yml` and **normally need no changes**; to customize, override the same entry's `config` via `- insert:` in your profile patch layer (`~/.dsh/profiles/web/cordis.patch.yml`). `provider` / `model` / `acceptKey` are editable from the WebUI form on the Plugins page; the rest are **not** in the WebUI form:
 
 | Field | Meaning | Default |
 |---|---|---|
