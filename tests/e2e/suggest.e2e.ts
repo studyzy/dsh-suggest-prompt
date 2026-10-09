@@ -196,8 +196,11 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('suggest-prompt browser e2e (real
     const input = composerEditor(page)
     await input.waitFor({ timeout: 15_000 })
 
-    // Route the suggestion model to DeepSeek Flash (deepseek-v4-flash).
-    await setSuggestionModel(page, 'deepseek-official', 'deepseek-v4-flash')
+    // Route the suggestion model to DeepSeek Flash (deepseek-flash). The
+    // default `deepseek-official` catalog kept V4.1 Flash + V4 Pro only since
+    // dsh 0.1.6-alpha.2 (V4 Flash defaults were removed), and the GUI select
+    // requires catalog membership — pick an id the dropdown actually lists.
+    await setSuggestionModel(page, 'deepseek-official', 'deepseek-flash')
 
     // Ask a math question. The base layer's default agent model is already
     // deepseek-official/deepseek-v4-flash, so the agent answers with real API.

@@ -106,16 +106,25 @@ jobs:
       # Fail loudly when the key is missing instead of silently skipping: the
       # e2e suite is `skipIf(!DEEPSEEK_API_KEY)`, and a silent skip would report
       # "passed" while testing nothing. Guard here so a misconfigured secret
-      # cannot masquerade as a green run.
+      # cannot masquerade as a green run. Dependabot pull requests never see
+      # repository/environment secrets, so for those the guard only warns and
+      # the lane is skipped — failing there would paint every dependency PR red
+      # for a reason outside its control.
       - name: Require DEEPSEEK_API_KEY
-        if: env.DEEPSEEK_API_KEY == ''
+        if: env.DEEPSEEK_API_KEY == '' && github.actor != 'dependabot[bot]'
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: |
           echo "::error::DEEPSEEK_API_KEY secret is not set in the 'DEEPSEEK_API_KEY' GitHub Environment"
           exit 1
 
+      - name: Note skipped e2e (dependabot has no secret access)
+        if: env.DEEPSEEK_API_KEY == '' && github.actor == 'dependabot[bot]'
+        run: |
+          echo "::warning::DEEPSEEK_API_KEY is unavailable to dependabot pull requests; the browser e2e lane is skipped for them."
+
       - name: Run browser e2e
+        if: env.DEEPSEEK_API_KEY != ''
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: pnpm test:e2e
