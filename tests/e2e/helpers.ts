@@ -218,6 +218,28 @@ export async function setSuggestionModel(page: Page, provider: string, model: st
   await page.getByRole('button', { name: '返回插件列表' }).click()
   await page.locator('div[data-plugin-item-detail="suggest-prompt"]')
     .waitFor({ state: 'detached', timeout: 15_000 })
+
+  // The Plugins page is a global main panel: while a panel entry is selected it
+  // owns the central area, the session Sidebar is not rendered, and no crumb
+  // returns to the Conversation — the composer stays gone even in the list
+  // view. Panel selection is transient state that a reload resets (dsh
+  // 0.2.0-rc.2, "global main panels" note), and the stored key, workspace, and
+  // just-saved suggestion model all live in the profile, so reload is the
+  // platform-agnostic way back to the composer.
+  await page.reload({ waitUntil: 'load' })
+
+  // The preview notice is confirmed per browser process (its ack lives in the
+  // host-only `ui-settings-general` namespace, so a page reload shows it again)
+  // while the credential step does not — the key was stored through the
+  // onboarding before the panel detour. Dismiss the notice idempotently: a
+  // loopback browser that persisted the ack never mounts the dialog.
+  const notice = page.getByRole('dialog', { name: '预览版说明' })
+  if (await notice.count() > 0) {
+    await notice.getByRole('button', { name: '继续' }).click()
+    await notice.waitFor({ state: 'detached', timeout: 15_000 })
+  }
+
+  await composerEditor(page).waitFor({ timeout: 15_000 })
 }
 
 /** Failure evidence goes to the gitignored .artifacts/. */
