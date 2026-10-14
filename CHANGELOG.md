@@ -10,6 +10,25 @@ version it targets.
 
 ## [Unreleased]
 
+Targets `dsh 0.2.1-alpha.1+` and `dsh 0.2.0-rc.2` alike: the fix below is a
+packaging change and does not touch a harness contract.
+
+### Fixed
+
+- **The plugin no longer installs its own copies of the harness runtime packages
+  ([#5]).** `@deepseek-ai/dsh-client-connection` and
+  `@deepseek-ai/dsh-storage-domain` were `dependencies` pinned to an exact
+  `0.2.0-rc.2`, so a profile whose package manager hoists promoted those copies
+  above the ones the host ships. The host then evaluated the older copy's own
+  exact `dsh` peers, refused them, and disabled the profile rows they back. The
+  `connection` row is what mounts the WebUI routes, so on `dsh 0.2.1-alpha.2`
+  every page of `dsh web` answered 404 while the server itself stayed up. Both
+  packages are imported from the host's copies at runtime anyway, so they move to
+  `peerDependencies` with the same `^0.2.0-rc.2` range the other fifteen use, and
+  stay in `devDependencies` for the local build.
+
+[#5]: https://github.com/studyzy/dsh-suggest-prompt/issues/5
+
 ## [1.2.0] - 2026-10-12
 
 Targets `dsh 0.2.1-alpha.1+` for generation; everything else (settings card,
