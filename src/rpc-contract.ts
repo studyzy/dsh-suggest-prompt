@@ -28,6 +28,16 @@
  */
 export const SUGGEST_ROUTE_PATH = '/api/suggest-prompt'
 
+/** Explicit, bounded generation for an existing idle session. */
+export const SUGGEST_GENERATE_ROUTE_PATH = '/api/suggest-prompt/generate'
+
+export type SuggestPromptGenerateStatus = 'generated' | 'empty' | 'busy' | 'no-context' | 'error'
+
+export interface SuggestPromptGenerateResponse {
+  readonly suggestion: import('./types.ts').SuggestPromptSuggestion | null
+  readonly status: SuggestPromptGenerateStatus
+}
+
 /**
  * HTTP method the suggestion route answers. The browser half calls this with a
  * plain `fetch` through the ordinary `/api` gateway, so the route declares

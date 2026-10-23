@@ -29,7 +29,7 @@ import {
   systemPrompt,
 } from '../src/generate.ts'
 import { SUGGEST_DOMAIN_NAME } from '../src/records.ts'
-import { SUGGEST_ROUTE_METHOD, SUGGEST_ROUTE_PATH } from '../src/rpc-contract.ts'
+import { SUGGEST_GENERATE_ROUTE_PATH, SUGGEST_ROUTE_METHOD, SUGGEST_ROUTE_PATH } from '../src/rpc-contract.ts'
 import type { SuggestPromptStorageRecord } from '../src/domain.ts'
 import type { SuggestPromptSuggestion, SuggestPromptTranscriptState } from '../src/types.ts'
 import { applyTranscriptProjection, EMPTY_TRANSCRIPT_STATE } from '../src/transcript.ts'
@@ -430,6 +430,132 @@ describe('suggestPromptDomainSpec', () => {
     expect(toSuggestion(record)).toEqual(suggestion)
     // A restored record carries whatever JSON an earlier build wrote.
     expect(toSuggestion({ version: 1, turn: 'bad' })).toBeUndefined()
+  })
+})
+
+async function manual(routes: FetchRouteStandin, body: unknown): Promise<Response> {
+  return routes.routes.get(SUGGEST_GENERATE_ROUTE_PATH)!.fetch(new Request(`http://localhost${SUGGEST_GENERATE_ROUTE_PATH}`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body),
+  }))
+}
+
+describe('manual suggestion generation', () => {
+  it('generates durably after automatic silent-empty, and writes no session events', async () => {
+    const { ctx, domain, routes } = await bench()
+    const adapter = new ImmediateAdapter('')
+    const release = ctx.llm.registerAdapter(['main'], adapter)
+    const session = ctx.sessions.create(SessionId('manual-retry'))
+    appendTurn(session, 1, 'fix login', 'fixed')
+    await settle()
+    const before = session.snapshotEvents()
+    expect((await manual(routes, { sessionId: session.id })).status).toBe(200)
+    expect(adapter.requests).toHaveLength(2)
+    release()
+    ctx.llm.registerAdapter(['main'], new ImmediateAdapter('run the tests'))
+    const response = await manual(routes, { sessionId: session.id })
+    expect(await response.json()).toMatchObject({ status: 'generated', suggestion: { text: 'run the tests', turn: 1 } })
+    expect(domain.records.get(session.id)?.text).toBe('run the tests')
+    expect(session.snapshotEvents()).toEqual(before)
+  })
+
+  it('validates malformed, missing, unknown, empty and running sessions', async () => {
+    const { ctx, routes } = await bench()
+    for (const body of ['{', {}, { sessionId: 2 }, { sessionId: ' ' }]) {
+      expect((await manual(routes, body)).status).toBe(400)
+    }
+    expect((await manual(routes, { sessionId: 'unknown' })).status).toBe(404)
+    const session = ctx.sessions.create(SessionId('manual-empty'))
+    expect(await (await manual(routes, { sessionId: session.id })).json()).toEqual({ suggestion: null, status: 'no-context' })
+    session.append('turn/start', { turn: 1 })
+    expect((await manual(routes, { sessionId: session.id })).status).toBe(409)
+    session.append('turn/end', { turn: 1, reason: { kind: 'interrupted' } })
+    expect(await (await manual(routes, { sessionId: session.id })).json()).toEqual({ suggestion: null, status: 'no-context' })
+  })
+
+  it('a newer automatic completion supersedes manual without losing its slot', async () => {
+    const { ctx, routes, domain } = await bench()
+    const release = ctx.llm.registerAdapter(['main'], new ImmediateAdapter(''))
+    const session = ctx.sessions.create(SessionId('manual-auto-supersede'))
+    appendTurn(session, 1, 'fix login', 'fixed')
+    await settle()
+    release()
+    const adapter = new GatedAdapter()
+    ctx.llm.registerAdapter(['main'], adapter)
+    const pending = manual(routes, { sessionId: session.id })
+    await settle()
+    appendTurn(session, 2, 'test login', 'tested')
+    await settle()
+    expect(adapter.requests).toHaveLength(2)
+    adapter.release()
+    expect((await pending).status).toBe(409)
+    expect((await manual(routes, { sessionId: session.id })).status).toBe(409)
+    adapter.release()
+    await settle()
+    expect(domain.records.get(session.id)?.turn).toBe(2)
+  })
+
+  it('shares one flight with auto, rejects duplicate manual calls, and supersedes on start', async () => {
+    const { ctx, routes, domain } = await bench()
+    const adapter = new GatedAdapter()
+    ctx.llm.registerAdapter(['main'], adapter)
+    const session = ctx.sessions.create(SessionId('manual-flight'))
+    appendTurn(session, 1, 'fix login', 'fixed')
+    await settle()
+    expect((await manual(routes, { sessionId: session.id })).status).toBe(409)
+    adapter.release()
+    await settle()
+    const pending = manual(routes, { sessionId: session.id })
+    await settle()
+    expect((await manual(routes, { sessionId: session.id })).status).toBe(409)
+    session.append('turn/start', { turn: 2 })
+    expect(adapter.requests[1]?.signal?.aborted).toBe(true)
+    adapter.release()
+    expect((await pending).status).toBe(409)
+    expect(domain.records.has(session.id)).toBe(false)
+  })
+
+  it('removes an obsolete manual put that finishes after a new turn starts', async () => {
+    const { ctx, routes, domain } = await bench()
+    const release = ctx.llm.registerAdapter(['main'], new ImmediateAdapter(''))
+    const session = ctx.sessions.create(SessionId('manual-slow-put'))
+    appendTurn(session, 1, 'fix login', 'fixed')
+    await settle()
+    release()
+    ctx.llm.registerAdapter(['main'], new ImmediateAdapter('run the tests'))
+    const table = domain.table('sessions')
+    const originalPut = table.put.bind(table)
+    let releasePut!: () => void
+    const gate = new Promise<void>(resolve => { releasePut = resolve })
+    table.put = async (key, value) => { await gate; await originalPut(key, value) }
+    const pending = manual(routes, { sessionId: session.id })
+    await settle()
+    session.append('turn/start', { turn: 2 })
+    releasePut()
+    expect((await pending).status).toBe(409)
+    expect(domain.records.has(session.id)).toBe(false)
+  })
+
+  it('aborts manual generation on dispose and hides provider failure details', async () => {
+    const { ctx, routes, domain } = await bench()
+    const release = ctx.llm.registerAdapter(['main'], new ImmediateAdapter(''))
+    const session = ctx.sessions.create(SessionId('manual-dispose'))
+    appendTurn(session, 1, 'fix login', 'fixed')
+    await settle()
+    release()
+    const releaseFailure = ctx.llm.registerAdapter(['main'], new ThrowingAdapter())
+    const failure = await manual(routes, { sessionId: session.id })
+    expect(failure.status).toBe(502)
+    expect(await failure.json()).toEqual({ status: 'error', suggestion: null })
+    releaseFailure()
+    const adapter = new GatedAdapter()
+    ctx.llm.registerAdapter(['main'], adapter)
+    const pending = manual(routes, { sessionId: session.id })
+    await settle()
+    await ctx.fiber.dispose()
+    expect(adapter.requests[0]?.signal?.aborted).toBe(true)
+    adapter.release()
+    expect((await pending).status).toBe(409)
+    expect(domain.puts).toBe(0)
   })
 })
 

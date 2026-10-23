@@ -3,7 +3,7 @@
 [![MIT License](https://img.shields.io/github/license/studyzy/dsh-suggest-prompt)](LICENSE)
 [![npm version](https://img.shields.io/npm/v/@studyzy/dsh-suggest-prompt)](https://www.npmjs.com/package/@studyzy/dsh-suggest-prompt)
 
-为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 开发的「建议提示词」插件：每个 agent 回合完成后，通过一次有界的辅助 LLM 调用，在会话日志中写入**一条建议的下一条提示词**；Web 端把它渲染成输入框内部的浅色幽灵占位文字，按 **Tab**（默认）即可采纳进草稿（与 Claude Code 一致）。
+为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 开发的「建议提示词」插件：每个 agent 回合完成后，通过一次有界的辅助 LLM 调用，在插件自己的持久化存储中写入**一条建议的下一条提示词**；Web 端把它渲染成输入框内部的浅色幽灵占位文字，按 **Tab**（默认）即可采纳进草稿（与 Claude Code 一致）。
 
 > 想快速上手？直接看 **[使用说明](USAGE.zh.md)**（面向终端用户的操作指南）。
 >
@@ -123,20 +123,29 @@ dsh plugin --profile web add @studyzy/dsh-suggest-prompt
 ## 工作方式
 
 - 宿主在 `turn/end`（reason=`completed`）时触发生成；按会话 + 回合去重，下一个完成回合会中止上一个在途生成。
-- 建议以**单条可忽略（ignorable）插件记录**（`plugin:suggest-prompt/suggested`，经 `appendPluginRecord` 写入，要求 `dsh >= 0.2.1`）进入会话日志：不认识的读者会保留并跳过它，不进入模型可见面，会话始终可正常打开；`suggestPrompt` 投影把它暴露给 Web 端。插件不写任何其他会话数据。
-- 在没有该记录 API 的 harness（`0.2.0-rc.2`）上插件保持完全休眠：挂载时告警一次，不调用模型、不写日志——因为以私有事件类型写日志会让会话在冷读取时被整体拒绝（issue #4）。
+- 建议保存在**插件自己的 storage domain**，浏览器通过同源 `/api/suggest-prompt` 路由读取；自动与手动生成都不追加会话事件，不污染模型可见上下文或会话日志。
+- 生成能力依赖公开的 `sessionProjections` 服务；没有该服务的宿主组合不会挂载生成能力。插件不依赖私有历史读取或 `appendPluginRecord`。
 - 喂给辅助调用的对话记录由**仅宿主端**的 `suggestPromptTranscript` 投影从已提交事件增量折叠而来，而不再扫描会话历史：`dsh >= 0.2.0` 禁止新生产代码同步读取历史事件。该折叠同时约束内存，只保留最近约 4 个回合。
 - 幽灵文字在 agent 空闲且草稿为空时显示；键入即隐藏，删回空草稿重新显示。`dsh >= 0.2.0` 移除了客户端的 `turnEnds` 映射，因此新鲜度改由空闲标志判断，而非本地比对完成回合。
 - 显示建议时，输入框的原生占位文字会被隐藏（用 `visibility`，不引起重排）；否则两者会绘制在同一文字起点上，谁都看不清。
 - 按 `acceptKey`（默认 Tab）把建议填入草稿（可编辑后再发送）；焦点不在输入框或处于 IME 组合输入时不触发，快捷键也只在显示幽灵文字时才被拦截（否则 Tab 保持默认焦点行为）。
 - `dsh >= 0.2.0` 的输入框是 Lexical 的 `contenteditable` 宿主而非 `<textarea>`；采纳路径同时兼容两种形态，因此快捷键在任一形态下都可用。
 
+### 触屏采纳与手动生成
+
+- 输入框工具栏在**空闲、空草稿、可编辑**时显示操作按钮；手机无需模拟 Tab 或连接键盘。
+- 有建议时点 **「采纳」**：只填入可编辑草稿，**绝不自动发送**；桌面原有快捷键保持不变。
+- 没有建议时点 **「生成建议」**：显式发起一次受既有模型路由、脱敏和预算限制的辅助调用，会产生模型用量。生成后先显示建议，再点「采纳」才填入草稿。
+- 无已完成的对话上下文、会话运行中或已有生成任务时，不会另起调用；空结果、忙碌和失败都有反馈，可以稍后重试。多次连点不会并发生成。
+- 输入了自己的草稿或输入框正在提交/处理时，操作入口隐藏，避免覆盖已有输入；检测到同一输入框的输入法组字时，采纳和生成也不会执行。切换会话或离开页面会中止客户端等待，旧响应不会填入其他会话。服务端仍独立约束模型超时和会话生命周期。
+- 后端通过当前宿主的同源 `POST /api/suggest-prompt/generate` 接口处理手动请求（会话访问沿用宿主连接认证）；浏览器不接触模型密钥，也不读取私有会话历史。
+
 ## 模型体验
 
 - **系统提示词**：把模型限定为「以用户口吻预测下一条提示词」，禁止生成内容或元文本，给出具体正反例；回复语言跟随会话（最后一条用户消息含 CJK → `简体中文`，否则 `English`）。
 - **模型看到的输入**：默认只有最后一轮的 `[User Message]` / `[Assistant Response]` 带标签块（已脱敏、受 `maxTranscriptChars` 约束）。
 - **免思考**：辅助请求默认携带 `reasoningEffort: off`（DeepSeek 序列化为 `thinking: disabled`），追求快速与低成本；模型不支持时自动去掉该字段重试一次（拒绝发生在任何网络 I/O 之前，几乎无额外开销）。
-- **成本**：每个完成回合至多一次辅助请求，受 `maxInputBytes` / `maxOutputTokens` 约束；主 agent 请求不增加任何 token。
+- **成本**：自动生成在每个完成回合至多启动一次任务；显式「生成建议」可为无建议的同一回合再次调用。所有调用都受 `maxInputBytes` / `maxOutputTokens` 约束，主 agent 请求不增加任何 token。
 
 ## 安全
 
@@ -181,7 +190,7 @@ MIT
 
 > **[阅读中文版](#dsh-suggest-prompt)** · English
 
-Suggested-next-prompt plugin for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). After every completed agent turn, a bounded auxiliary LLM call writes **one suggested next prompt** into the session log; the web side renders it as ghost placeholder text inside the composer — press **Tab** (default) to adopt it into the draft (the Claude Code behavior).
+Suggested-next-prompt plugin for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). After every completed agent turn, a bounded auxiliary LLM call writes **one suggested next prompt** into the plugin's durable storage; the web side renders it as ghost placeholder text inside the composer — press **Tab** (default) to adopt it into the draft (the Claude Code behavior).
 
 For developers / maintainers: this repository is the authoritative source of record for a **single bundle package** (`@studyzy/dsh-suggest-prompt`) that merges the host generation and the browser rendering into one one-command-installable bundle:
 
@@ -297,20 +306,27 @@ The following are provided with defaults by the bundle's own `cordis.patch.yml` 
 ## How it works
 
 - The host triggers generation on `turn/end` (reason `completed`), deduplicated per session and turn; the next completed turn aborts the in-flight generation.
-- The suggestion enters the session log as a **single ignorable plugin record** (`plugin:suggest-prompt/suggested`, written through `appendPluginRecord`, requires `dsh >= 0.2.1`): readers that do not know it retain and skip it, it never joins the model-visible surface, and the session always reopens; the `suggestPrompt` projection exposes it to the web side. The plugin writes nothing else to the session log.
-- On a harness without that record API (`0.2.0-rc.2`) the plugin stays fully dormant: it warns once at mount and makes no LLM call and no log write — writing private event types made sessions unreadable on cold read (issue #4).
+- Suggestions persist in **the plugin's own storage domain**, read by the browser through the same-origin `/api/suggest-prompt` route. Neither automatic nor manual generation appends session events or changes model-visible context.
+- Generation mounts only when the public `sessionProjections` service is available. It does not depend on private history readers or `appendPluginRecord`.
 - The transcript fed to the auxiliary call is maintained as a host-only `suggestPromptTranscript` projection folded from committed events, rather than by scanning session history: `dsh >= 0.2.0` deprecates synchronous history reads for new production callers. The fold also bounds memory, keeping roughly the last four turns.
 - The ghost text shows while the agent is idle and the draft is empty; typing hides it, deleting back to an empty draft re-shows it. `dsh >= 0.2.0` removed the client's `turnEnds` map, so freshness comes from the idle flag rather than a local completed-turn comparison.
 - While a suggestion is displayed, the composer's native placeholder is hidden (via `visibility`, so nothing reflows) — otherwise the two would paint on the same text origin and neither would be readable.
 - Pressing `acceptKey` (default Tab) fills the draft (editable, not sent). It is ignored while focus is outside the composer or during IME composition; the shortcut is intercepted only while ghost text is displayed (otherwise Tab keeps its default focus behavior).
 - The composer is a Lexical `contenteditable` host in `dsh >= 0.2.0`, not a `<textarea>`; the accept path detects focus across both shapes so the shortcut works on either.
 
+### Touch acceptance and on-demand generation
+
+- While the session is idle and the editable draft is empty, the composer toolbar shows **Accept** if a suggestion exists, otherwise **Suggest**. Touch users do not need a hardware keyboard; the desktop shortcut remains available.
+- **Accept only fills an editable draft; it never sends.** Suggest performs an explicit, budgeted model call using the configured route and redaction rules, which incurs model usage. Generation only displays a suggestion: accepting it is a separate action.
+- Completed conversation context is required. Busy sessions, duplicate clicks, empty output and errors receive feedback. Typed drafts and input submission/ownership phases hide the controls; switching sessions or unmounting aborts the client wait and cannot fill another session's draft. Host-side model timeouts and lifecycle guards remain independent.
+- Manual requests use the host-authenticated, same-origin `POST /api/suggest-prompt/generate` endpoint. No model credentials or private history readers are exposed to the browser.
+
 ## Model Experience
 
 - **System prompt**: binds the model to predicting the user's next prompt in the user's own voice, forbids generating content or meta-text, and gives concrete examples and anti-examples; the reply language follows the conversation (`简体中文` when the last user message contains CJK, otherwise `English`).
 - **What the model sees**: by default only the last turn, framed as labelled `[User Message]` / `[Assistant Response]` blocks (redacted, bounded by `maxTranscriptChars`).
 - **No thinking**: the auxiliary request carries `reasoningEffort: off` by default (DeepSeek serializes it as `thinking: disabled`) for speed and low cost; a model that rejects `off` retries once without the field (the rejection happens before any network I/O, so the retry is nearly free).
-- **Cost**: at most one auxiliary request per completed turn, bounded by `maxInputBytes` / `maxOutputTokens`; the main agent request gains zero tokens.
+- **Cost**: automatic generation starts at most one task per completed turn. An explicit **Suggest** action may call the model again for the same turn when no suggestion exists. All calls are bounded by `maxInputBytes` / `maxOutputTokens`; the main agent request gains zero tokens.
 
 ## Security
 

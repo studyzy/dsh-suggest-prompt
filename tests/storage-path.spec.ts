@@ -173,9 +173,9 @@ async function mount(reply = 'run the focused suite', seed?: Record<string, unkn
   ctx.provide('connection', {
     fetch: {
       register(route: { path: string; methods: readonly string[]; fetch: typeof handler }) {
-        expect(route.path).toBe(SUGGEST_ROUTE_PATH)
+        expect([SUGGEST_ROUTE_PATH, `${SUGGEST_ROUTE_PATH}/generate`]).toContain(route.path)
         expect(route.methods).toEqual([SUGGEST_ROUTE_METHOD])
-        handler = route.fetch
+        if (route.path === SUGGEST_ROUTE_PATH) handler = route.fetch
         return () => undefined
       },
     },

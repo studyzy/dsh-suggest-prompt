@@ -25,9 +25,9 @@
  * @module @studyzy/dsh-suggest-prompt/browser/suggestion-source
  */
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { SuggestPromptSuggestion } from '../types.ts'
-import { SUGGEST_ROUTE_METHOD, SUGGEST_ROUTE_PATH } from '../rpc-contract.ts'
+import { SUGGEST_GENERATE_ROUTE_PATH, SUGGEST_ROUTE_METHOD, SUGGEST_ROUTE_PATH } from '../rpc-contract.ts'
 
 /**
  * Poll interval for the stored suggestion, in milliseconds.
@@ -63,9 +63,9 @@ export async function fetchSuggestion(
       warnOnce(`suggest-prompt: read failed with HTTP ${String(response.status)}`)
       return null
     }
-    const body = await response.json() as { suggestion?: unknown }
-    const value = body.suggestion
-    return value === null || value === undefined ? null : value as SuggestPromptSuggestion
+    const body: unknown = await response.json()
+    if (typeof body !== 'object' || body === null || !('suggestion' in body)) return null
+    return isSuggestion(body.suggestion) ? body.suggestion : null
   } catch (error) {
     // An aborted request is the normal unmount path; a genuine transport
     // failure shows nothing rather than a broken composer. It is still
@@ -73,6 +73,46 @@ export async function fetchSuggestion(
     // suggestion yet", which makes a misconfigured channel undebuggable.
     warnOnce(`suggest-prompt: read threw ${String(error)}`)
     return null
+  }
+}
+
+/** Validate data before it can become editor text or a shortcut matcher. */
+function isSuggestion(value: unknown): value is SuggestPromptSuggestion {
+  if (typeof value !== 'object' || value === null) return false
+  const record = value as Record<string, unknown>
+  return typeof record.text === 'string' && record.text.trim() !== ''
+    && Number.isSafeInteger(record.turn) && Number(record.turn) >= 0
+    && Number.isSafeInteger(record.baseSeq) && Number(record.baseSeq) >= 0
+    && typeof record.truncated === 'boolean'
+    && (record.acceptKey === undefined || typeof record.acceptKey === 'string')
+}
+
+export type ManualSuggestionResult =
+  | { readonly status: 'generated'; readonly suggestion: SuggestPromptSuggestion }
+  | { readonly status: 'empty' | 'busy' | 'no-context' | 'error'; readonly suggestion: null }
+
+/** One explicit, bounded host request. It never writes the composer draft. */
+export async function requestSuggestion(sessionId: string, signal: AbortSignal): Promise<ManualSuggestionResult> {
+  try {
+    const response = await fetch(SUGGEST_GENERATE_ROUTE_PATH, {
+      method: SUGGEST_ROUTE_METHOD,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId }),
+      signal,
+    })
+    const body: unknown = await response.json()
+    if (typeof body !== 'object' || body === null || !('status' in body)) {
+      return { status: 'error', suggestion: null }
+    }
+    if (response.status === 409 && body.status === 'busy') return { status: 'busy', suggestion: null }
+    if (!response.ok) return { status: 'error', suggestion: null }
+    if (body.status === 'generated' && 'suggestion' in body && isSuggestion(body.suggestion)) {
+      return { status: 'generated', suggestion: body.suggestion }
+    }
+    if (body.status === 'empty' || body.status === 'no-context') return { status: body.status, suggestion: null }
+    return { status: 'error', suggestion: null }
+  } catch {
+    return { status: 'error', suggestion: null }
   }
 }
 
@@ -101,22 +141,30 @@ function warnOnce(message: string): void {
  * @param sessionId - session whose suggestion is tracked.
  * @returns the latest suggestion, or `null` while none is stored.
  */
-export function useStoredSuggestion(
-  sessionId: string,
-): SuggestPromptSuggestion | null {
-  const [suggestion, setSuggestion] = useState<SuggestPromptSuggestion | null>(null)
+export function useStoredSuggestion(sessionId: string): SuggestPromptSuggestion | null {
+  return useSuggestionSource(sessionId).suggestion
+}
+
+/** A session-fenced source with an explicit refresh after manual generation. */
+export function useSuggestionSource(sessionId: string) {
+  const [stored, setStored] = useState<{ sessionId: string; value: SuggestPromptSuggestion | null } | null>(null)
+  const [revision, setRevision] = useState(0)
+  const refresh = useCallback(() => { setRevision(value => value + 1) }, [])
 
   useEffect(() => {
     let cancelled = false
+    let pending = false
     const controller = new AbortController()
     const read = (): void => {
+      // Do not pile up requests on a slow mobile connection, nor let older
+      // overlapping reads overwrite the newest result.
+      if (pending) return
+      pending = true
       void fetchSuggestion(sessionId, controller.signal).then((value) => {
         if (cancelled) return
-        // Preserve the previous reference when the payload is unchanged so the
-        // memoized accept-key matcher and the effect below do not churn on
-        // every poll.
-        setSuggestion(previous => (sameSuggestion(previous, value) ? previous : value))
-      })
+        setStored(previous => previous?.sessionId === sessionId && sameSuggestion(previous.value, value)
+          ? previous : { sessionId, value })
+      }).finally(() => { pending = false })
     }
     read()
     const timer = setInterval(read, POLL_INTERVAL_MS)
@@ -125,9 +173,11 @@ export function useStoredSuggestion(
       controller.abort()
       clearInterval(timer)
     }
-  }, [sessionId])
+  }, [sessionId, revision])
 
-  return suggestion
+  // Never render the old session's suggestion during the render before the
+  // effect for the new session has run.
+  return { suggestion: stored?.sessionId === sessionId ? stored.value : null, refresh }
 }
 
 /**

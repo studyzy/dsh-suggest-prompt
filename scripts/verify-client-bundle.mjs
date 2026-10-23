@@ -269,8 +269,10 @@ function slotRegister(options, component) {
   return () => {}
 }
 
-check('registers exactly one dictionary namespace', seen.dictionaries.length === 1, seen.dictionaries.join(', '))
-check('dictionary namespace is the card namespace', seen.dictionaries[0] === NS, String(seen.dictionaries[0]))
+check('registers exactly the settings and action dictionary namespaces',
+  seen.dictionaries.length === 2 && new Set(seen.dictionaries).size === 2
+    && seen.dictionaries.includes(NS) && seen.dictionaries.includes('suggest-prompt.actions'),
+  seen.dictionaries.join(', '))
 check('binds the entry config form', seen.forms.includes(ENTRY_ID), seen.forms.join(', '))
 
 // --- The ghost overlay (unchanged surface, still load-bearing) -------------
@@ -281,6 +283,15 @@ check(
   overlayEntry?.id === ENTRY_ID && overlayEntry?.order === 30,
   JSON.stringify(overlayEntry ? { id: overlayEntry.id, order: overlayEntry.order } : null),
 )
+
+// --- Touch/manual actions (public toolbar, locale-bound) -------------------
+const actionEntries = seen.entries.filter((entry) => entry.slot === 'conversation.input.right')
+check('registers one public composer action entry', actionEntries.length === 1)
+check('composer action has its own id and localized namespace',
+  actionEntries[0]?.id === 'suggest-prompt-actions' && actionEntries[0]?.order === 30
+    && actionEntries[0]?.locale === 'suggest-prompt.actions',
+  JSON.stringify(actionEntries[0] ? { id: actionEntries[0].id, order: actionEntries[0].order, locale: actionEntries[0].locale } : null))
+check('composer action is a renderable component', typeof actionEntries[0]?.component === 'function')
 
 // --- The two Plugins-page surfaces ----------------------------------------
 // The configuration form appears on two surfaces because the Plugins page files

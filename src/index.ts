@@ -41,7 +41,8 @@ import {
 import type { SuggestPromptDomain } from './records.ts'
 import type { SuggestPromptStorageRecord } from './domain.ts'
 import { applyTranscriptProjection, EMPTY_TRANSCRIPT_STATE } from './transcript.ts'
-import { SUGGEST_ROUTE_METHOD, SUGGEST_ROUTE_PATH } from './rpc-contract.ts'
+import { SUGGEST_GENERATE_ROUTE_PATH, SUGGEST_ROUTE_METHOD, SUGGEST_ROUTE_PATH } from './rpc-contract.ts'
+import type { SuggestPromptGenerateStatus } from './rpc-contract.ts'
 import type { SuggestPromptSuggestion, SuggestPromptTranscriptState } from './types.ts'
 
 // The pure payload outlet (./types.ts, ONE home of the `suggestPrompt`
@@ -55,7 +56,18 @@ export type * from './domain.ts'
  * The browser-facing RPC channel this plugin owns. Absolute by contract
  * (`/^\/[A-Za-z0-9._~-]+$/`), and never the reserved `/api`.
  */
-export { SUGGEST_ROUTE_METHOD, SUGGEST_ROUTE_PATH }
+export { SUGGEST_GENERATE_ROUTE_PATH, SUGGEST_ROUTE_METHOD, SUGGEST_ROUTE_PATH }
+
+interface SuggestPromptLifecycle {
+  readonly running: boolean
+  readonly turn: number
+  readonly completed: boolean
+}
+declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionStateMap {
+    suggestPromptLifecycle: SuggestPromptLifecycle
+  }
+}
 
 /** Persisted-state schema of the host-only `suggestPromptTranscript` fold. */
 const transcriptStateSchema: ZodType<SuggestPromptTranscriptState> = zod.object({
@@ -79,6 +91,8 @@ interface SessionState {
   lastSuggestedTurn: number
   /** One in-flight generation, superseded by abort on the next completed turn. */
   pending: { readonly turn: number; readonly controller: AbortController } | undefined
+  /** Order durable mutations so an older asynchronous put cannot win last. */
+  mutation?: Promise<void>
 }
 
 /** Required LLM and session policy; this plugin adds no defaults. */
@@ -218,6 +232,16 @@ export function apply(ctx: Context, config: Config): void {
 function applyWithProjections(ctx: Context, config: Config): void {
   const states = new WeakMap<Session, SessionState>()
   const tracked = new Set<SessionState>()
+  let disposed = false
+  const stateOf = (session: Session): SessionState => {
+    let state = states.get(session)
+    if (state === undefined) {
+      state = { lastSuggestedTurn: -1, pending: undefined }
+      states.set(session, state)
+      tracked.add(state)
+    }
+    return state
+  }
 
   // Lazy, shared, and single-flight: the RPC handler and the generator both
   // read this promise, so the domain is opened exactly once per plugin mount.
@@ -225,6 +249,12 @@ function applyWithProjections(ctx: Context, config: Config): void {
   const domain = (): Promise<SuggestPromptDomain> => {
     domainPromise ??= ctx.storageDomain.open(suggestPromptDomainSpec)
     return domainPromise
+  }
+
+  const mutate = (state: SessionState, action: () => Promise<void>): Promise<void> => {
+    const next = (state.mutation ?? Promise.resolve()).then(action, action)
+    state.mutation = next.catch(() => {})
+    return next
   }
 
   /** The retained transcript fold for one session. */
@@ -248,16 +278,17 @@ function applyWithProjections(ctx: Context, config: Config): void {
     const sessionId = sessionIdOf(body)
     if (sessionId === undefined) return null
     const opened = await domain()
+    const session = ctx.sessions.get(sessionId)
+    if (session !== undefined) {
+      const lifecycle = ctx.sessionProjections.stateOf(session, 'suggestPromptLifecycle')
+      if (lifecycle?.running) return null
+    }
     return readSuggestion(opened, sessionId) ?? null
   }
 
   const handleTurnEnd = (session: Session, turn: number): void => {
-    let state = states.get(session)
-    if (state === undefined) {
-      state = { lastSuggestedTurn: -1, pending: undefined }
-      states.set(session, state)
-      tracked.add(state)
-    }
+    const state = stateOf(session)
+    if (disposed) return
     if (state.pending?.turn === turn) return
     const pending = state.pending
     if (pending !== undefined) pending.controller.abort()
@@ -297,7 +328,9 @@ function applyWithProjections(ctx: Context, config: Config): void {
       try {
         const opened = await domain()
         if (state.pending?.controller !== controller) return
-        await clearSuggestion(opened, session.id)
+        await mutate(state, async () => {
+          if (state.pending?.controller === controller) await clearSuggestion(opened, session.id)
+        })
       } catch (error) {
         // Superseded clears are expected to lose their slot; only a live
         // failure is worth reporting, and only once per turn.
@@ -353,7 +386,11 @@ function applyWithProjections(ctx: Context, config: Config): void {
       }
       const opened = await domain()
       if (state.pending?.controller !== controller) return
-      await writeSuggestion(opened, session.id, suggested)
+      await mutate(state, async () => {
+        if (state.pending?.controller !== controller) return
+        await writeSuggestion(opened, session.id, suggested)
+        if (state.pending?.controller !== controller) await clearSuggestion(opened, session.id)
+      })
       if (state.pending?.controller !== controller) return
       state.pending = undefined
       state.lastSuggestedTurn = turn
@@ -397,6 +434,11 @@ function applyWithProjections(ctx: Context, config: Config): void {
   // The listener is deliberately not stored: Cordis disposes it with the
   // plugin fiber, and the plugin owns no path that unsubscribes early.
   ctx.on('session/event', (session, event) => {
+    if (event.type === 'turn/start') {
+      const state = states.get(session)
+      state?.pending?.controller.abort()
+      if (state !== undefined) state.pending = undefined
+    }
     if (event.type === 'turn/end' && event.data.reason.kind === 'completed') {
       handleTurnEnd(session, event.data.turn)
     }
@@ -404,7 +446,11 @@ function applyWithProjections(ctx: Context, config: Config): void {
 
   // Abort every in-flight generation when the plugin unloads.
   ctx.effect(() => () => {
-    for (const state of tracked) state.pending?.controller.abort()
+    disposed = true
+    for (const state of tracked) {
+      state.pending?.controller.abort()
+      state.pending = undefined
+    }
   })
 
   // The browser read endpoint. `connection.fetch.register` claims an exact
@@ -429,6 +475,76 @@ function applyWithProjections(ctx: Context, config: Config): void {
     }),
     'suggest-prompt: browser suggestion route',
   )
+
+  // Explicit generation shares the automatic path's flight slot, transcript,
+  // bounded dispatcher and durable domain; it deliberately bypasses its cursor.
+  ctx.effect(() => ctx.connection.fetch.register({
+    path: SUGGEST_GENERATE_ROUTE_PATH,
+    methods: ['POST'],
+    requestBody: 'buffered',
+    fetch: async (request: Request): Promise<Response> => {
+      const reply = (status: SuggestPromptGenerateStatus, code = 200, suggestion: SuggestPromptSuggestion | null = null): Response =>
+        Response.json({ suggestion, status }, { status: code })
+      let body: unknown
+      try { body = await request.json() } catch { return reply('error', 400) }
+      const id = sessionIdOf(body)
+      if (id === undefined || id.trim() !== id || id.length > 512 || /[\u0000-\u001f]/u.test(id)) return reply('error', 400)
+      const session = ctx.sessions.get(id)
+      if (session === undefined) return reply('error', 404)
+      const state = stateOf(session)
+      const lifecycle = ctx.sessionProjections.stateOf(session, 'suggestPromptLifecycle')
+      if (disposed || state.pending !== undefined || lifecycle?.running) return reply('busy', 409)
+      const transcript = transcriptStateOf(session)
+      const turn = transcript.lastCompletedTurn
+      if (!lifecycle?.completed || lifecycle.turn !== turn || turn < 1
+        || !transcript.entries.some(entry => entry.turn === turn && entry.text.trim().length > 0)) return reply('no-context')
+      const controller = new AbortController()
+      state.pending = { turn, controller }
+      const ownsFlight = (): boolean => !disposed && !controller.signal.aborted && state.pending?.controller === controller
+      try {
+        const resolved = resolveSuggestPromptConfig(config)
+        const opened = await domain()
+        if (!ownsFlight()) return reply('busy', 409)
+        await mutate(state, async () => {
+          if (state.pending?.controller === controller) await clearSuggestion(opened, session.id)
+        })
+        if (!ownsFlight()) return reply('busy', 409)
+        const result = await generateSuggestion(ctx, resolved, session, turn, transcript, controller.signal)
+        if (!ownsFlight()) return reply('busy', 409)
+        if (result === undefined) {
+          state.lastSuggestedTurn = Math.max(state.lastSuggestedTurn, turn)
+          return reply('empty')
+        }
+        await mutate(state, async () => {
+          if (!ownsFlight()) return
+          await writeSuggestion(opened, session.id, result)
+          if (!ownsFlight()) await clearSuggestion(opened, session.id)
+        })
+        if (!ownsFlight()) return reply('busy', 409)
+        state.lastSuggestedTurn = Math.max(state.lastSuggestedTurn, turn)
+        return reply('generated', 200, readSuggestion(opened, session.id) ?? null)
+      } catch {
+        // No adapter error, credential, route or transcript is exposed to clients.
+        return ownsFlight() ? reply('error', 502) : reply('busy', 409)
+      } finally {
+        if (state.pending?.controller === controller) state.pending = undefined
+      }
+    },
+  }), 'suggest-prompt: manual generation route')
+
+  // A separate host-only lifecycle fold handles restored sessions too, without
+  // reading deprecated history or depending on private execution internals.
+  ctx.sessionProjections.register<'suggestPromptLifecycle', SuggestPromptLifecycle>({
+    key: 'suggestPromptLifecycle',
+    stateSchema: zod.object({ running: zod.boolean(), turn: zod.number().int().nonnegative(), completed: zod.boolean() }),
+    init: () => ({ running: false, turn: 0, completed: false }),
+    apply: (state, event) => event.type === 'turn/start'
+      ? { running: true, turn: event.data.turn, completed: false }
+      : event.type === 'turn/end'
+        ? { running: false, turn: event.data.turn, completed: event.data.reason.kind === 'completed' }
+        : state,
+    stateVersion: 1,
+  })
 
   // Host-only transcript fold: the retained transcript that generation reads in
   // place of the prohibited synchronous session-history scans. It carries no
