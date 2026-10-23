@@ -137,8 +137,10 @@ export function GhostSuggestion({
   const suggestion = useStoredSuggestion(sessionId)
   const running = useSession(s => s.running)
   const draft = useInput(s => s.draft)
+  const phase = useInput(s => s.phase)
 
-  const text = currentSuggestion(suggestion, running, draft)
+  const text = phase === undefined || phase === 'plain'
+    ? currentSuggestion(suggestion, running, draft) : undefined
 
   // A malformed configured shortcut degrades to the default Tab matcher
   // instead of disabling accept entirely.

@@ -34,6 +34,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import { GhostSuggestion } from './GhostSuggestion.tsx'
+import { SuggestionActions } from './SuggestionActions.tsx'
+import { ACTIONS_NS, actionEn, actionZh } from './action-locales.ts'
 import type { GhostSuggestionProps } from './GhostSuggestion.tsx'
 import { SettingsCard } from './SettingsCard.tsx'
 import { SuggestPromptCardController, SUGGEST_PROMPT_NS } from './settings-controller.ts'
@@ -124,6 +126,21 @@ export function apply(ctx: ClientContext): void {
     id: 'suggest-prompt',
     order: 30,
   }, (props: GhostSuggestionProps) => GhostSuggestion(props)))
+
+  // Public compact-controls seat: touch acceptance and on-demand generation do
+  // not depend on the optional plugin-settings service or an Android bridge.
+  ctx.inject(['locale'], (localeCtx) => {
+    localeCtx.effect(
+      () => localeCtx.locale.register(ACTIONS_NS, { zh: actionZh, en: actionEn }),
+      'ui-suggest-prompt: composer action dictionary',
+    )
+    localeCtx.slots.inject('conversation.input.right', () => localeCtx.slots.register({
+      name: 'conversation.input.right',
+      id: 'suggest-prompt-actions',
+      order: 30,
+      locale: ACTIONS_NS,
+    }, SuggestionActions))
+  })
 
   ctx.inject(['configForms', 'locale'], (settingsCtx) => {
     settingsCtx.effect(
