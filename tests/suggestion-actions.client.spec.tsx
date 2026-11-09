@@ -116,6 +116,25 @@ describe('Touch suggestion actions', () => {
     expect(getComputedStyle(button).borderTopWidth).toBe('0px')
   })
 
+  it('styles feedback and action controls with real DSH theme tokens so light mode stays readable', async () => {
+    const k = kit()
+    k.manual.mockResolvedValue(Response.json({ status: 'no-context', suggestion: null }))
+    const view = await mount(k.props)
+    fireEvent.click(view.getByRole('button', { name: '生成建议' }))
+    const status = await view.findByRole('status')
+    const css = view.container.querySelector('style')?.textContent ?? ''
+    expect(status.classList.contains('dsh-suggest-feedback')).toBe(true)
+    expect(css).toContain('--dsw-alias-bg-layer-3')
+    expect(css).toContain('--dsw-alias-border-l2')
+    expect(css).toContain('--dsw-alias-interactive-bg-hover')
+    expect(css).toContain('--dsw-alias-state-business-primary')
+    expect(css).not.toContain('--dsw-alias-background-primary')
+    expect(css).not.toContain('--dsw-alias-separator')
+    expect(css).not.toContain('--dsw-alias-fill-tertiary')
+    expect(css).not.toContain('--dsw-alias-tint')
+    expect(css).not.toContain('#25262a')
+  })
+
   it('generates on demand, surfaces the new ghost, and fills only after explicit acceptance', async () => {
     const k = kit()
     const view = render(<><GhostSuggestion {...k.props} /><SuggestionActions {...k.props} /></>)
