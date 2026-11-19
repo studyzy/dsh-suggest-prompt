@@ -39,7 +39,7 @@
 
 ### 前置条件
 
-- Node.js `>=24.9.0`（与 dsh 自身声明的 `engines.node` 一致；开发安装还要求 `^24.15.0`，因为 jsdom 30 的 engines 如此声明）、pnpm。
+- Node.js `>=24.15.0`（jsdom 31 的 engines 声明 `^24.15.0`，高于 dsh 自身声明的 `>=24.9.0`；本仓库 `.npmrc` 设了 `engine-strict=true`，因此安装下限取较高者）、pnpm。
 - 一个基于 deepseek-harness 的 dsh 部署（web profile），**dsh ≥ 0.2.2-rc.5 且 < 0.3.0**（0.2.2 变更了浏览器客户端模块注册 id 与会话投影的读取方式：`register()` 现在返回 `Promise<ProjectionHandle<S>>`；0.2.1 及更早的宿主会禁用本插件，因此 1.3.0 不兼容旧宿主）。浏览器端需要 `conversation.input.overlay` 槽位与 `inputActions.setDraft`（deepseek-harness 的标准 web 输入机均已提供）。
 
 ### 从 GitHub 安装（默认方式，一行命令）
@@ -222,7 +222,7 @@ After every completed agent turn, the suggestion model renders the predicted nex
 
 ### Prerequisites
 
-- Node.js `>=24.9.0` — the same floor dsh declares in its own `engines.node`. A development install additionally needs `^24.15.0` because jsdom 30 declares that in its engines.
+- Node.js `>=24.15.0` — jsdom 31 declares `^24.15.0` in its engines, which is stricter than the `>=24.9.0` floor dsh declares; `.npmrc` sets `engine-strict=true`, so the higher floor is the install requirement.
 - pnpm.
 - A dsh deployment built from the DeepSeek Harness (web profile), **dsh ≥ 0.2.2-rc.5 and < 0.3.0** (0.2.2 changed the browser client-module registration id and how session projections are read: `register()` now returns `Promise<ProjectionHandle<S>>`; 0.2.1 and earlier hosts disable this plugin, so 1.3.0 is not backward compatible with them). The browser side needs the `conversation.input.overlay` slot and `inputActions.setDraft` — both standard in the deepseek-harness web input machine.
 
