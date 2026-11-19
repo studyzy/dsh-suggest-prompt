@@ -10,6 +10,21 @@ version it targets.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The ghost suggestion no longer paints over the composer's attachments row.**
+  It was pinned with a fixed `top: calc(10px + 4px)` / `left: 16px` offset, which
+  describes only a composer whose editor sits at the card's top edge — the
+  numbers the pre-`0.2.0` layout used. The card has since become a flex column
+  that stacks the accessory slot and the attachments row above the editor, so
+  attaching an image pushed the editor down while the ghost stayed put and drew
+  the suggestion on top of the user's image chips. The ghost now measures the
+  draft editor's text origin at runtime (`src/browser/ghost-geometry.ts`) and
+  re-measures through a `ResizeObserver` plus `window.resize`, so attachments,
+  the font-size preference and the hero/docked layout all carry it along with
+  the caret. Verified on `dsh 0.2.2-rc.1`; the stylesheet offset survives only as
+  a fallback for trees with no layout to measure (jsdom, a detached node).
+
 ## [1.3.0] - 2026-11-19
 
 Rebuilt against `dsh 0.2.2-rc.5`. **This release does not run on 0.2.1 or

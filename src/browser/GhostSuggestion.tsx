@@ -17,11 +17,15 @@
  * `::placeholder` pseudo-element. Both facts drive the selectors and the focus
  * check below.
  */
-import { useEffect, useMemo, type CSSProperties } from 'react'
+import {
+  useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties,
+} from 'react'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SuggestPromptSuggestion } from '../types.ts'
 import { parseAcceptKey } from './accept-key.ts'
 import type { AcceptKeyMatcher } from './accept-key.ts'
+import { findComposerCard, measureGhostBox, sameGhostBox } from './ghost-geometry.ts'
+import type { GhostBox } from './ghost-geometry.ts'
 import { useStoredSuggestion } from './suggestion-source.ts'
 
 /** Full props of the overlay ghost: session standard kit (session scope). */
@@ -38,14 +42,19 @@ let styleUsers = 0
 const CSS_TEXT = `
 .dsh-suggest-prompt-ghost {
   position: absolute;
-  /* overlayAnchor sits at the composer card's top edge (inset: 0 0 auto).
-     Align the ghost with the editor's text origin: the card adds 10px top
-     padding and the editor scroll layer adds 4px top / 16px left (see
-     InputBar/DraftEditor). pointer-events:none keeps the caret and clicks on
-     the editor. */
-  top: calc(10px + 4px);
-  left: 16px;
-  right: 12px;
+  /* FALLBACK ONLY. The component measures the draft editor's text origin at
+     runtime (ghost-geometry.ts) and overrides top/left/right with inline px.
+     These numbers only apply where nothing can be measured (jsdom, a detached
+     tree) and mirror the current composer: card padding-top 8px + editor
+     padding-top 4px, editor padding-left 14px / padding-right 8px.
+
+     A fixed offset alone cannot work: the card is a flex column whose children
+     above the editor (accessory slot, the attachments row that carries pasted
+     image chips) change height, so a stylesheet offset lands on those chips as
+     soon as the composer has an attachment. */
+  top: 12px;
+  left: 14px;
+  right: 8px;
   white-space: pre-wrap;
   word-break: break-word;
   overflow: hidden;
@@ -186,10 +195,68 @@ export function GhostSuggestion({
     }
   }, [])
 
+  // Align the ghost with the draft's text origin instead of trusting a
+  // stylesheet offset: the overlay anchor sits at the CARD's top edge, while the
+  // editor can be pushed down by the accessory slot and by the attachments row
+  // (pasted image chips). Measuring keeps the ghost on the first text line no
+  // matter what the composer stacks above it, and re-measuring on resize covers
+  // an attachment appearing, a font-size preference change, or the composer
+  // switching between hero and docked layouts.
+  const ghostRef = useRef<HTMLDivElement | null>(null)
+  const [ghostBox, setGhostBox] = useState<GhostBox | undefined>(undefined)
+
+  useLayoutEffect(() => {
+    const node = ghostRef.current
+    const card = node === null ? null : findComposerCard(node)
+    if (node === null || card === null) {
+      setGhostBox(previous => (previous === undefined ? previous : undefined))
+      return
+    }
+    // rAF-debounced so a ResizeObserver callback cannot re-enter layout in the
+    // same frame (which browsers report as an observer loop).
+    let frame: number | undefined
+    const sync = (): void => {
+      const next = measureGhostBox(card)
+      setGhostBox(previous => (sameGhostBox(previous, next) ? previous : next))
+    }
+    const schedule = (): void => {
+      if (typeof requestAnimationFrame !== 'function') {
+        sync()
+        return
+      }
+      if (frame !== undefined) return
+      frame = requestAnimationFrame(() => {
+        frame = undefined
+        sync()
+      })
+    }
+    sync()
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(schedule) : undefined
+    if (observer !== undefined) {
+      observer.observe(card)
+      const scroll = card.querySelector('[data-input-scroll]')
+      if (scroll !== null) observer.observe(scroll)
+    }
+    window.addEventListener('resize', schedule)
+    return () => {
+      if (frame !== undefined) cancelAnimationFrame(frame)
+      observer?.disconnect()
+      window.removeEventListener('resize', schedule)
+    }
+  }, [text])
+
   if (text === undefined) return null
+  const ghostStyle: CSSProperties | undefined = ghostBox === undefined
+    ? undefined
+    : {
+      top: `${ghostBox.top}px`,
+      left: `${ghostBox.left}px`,
+      right: 'auto',
+      width: `${ghostBox.width}px`,
+    }
   return (
     <div style={ROOT_STYLE} data-suggest-prompt-ghost="">
-      <div className="dsh-suggest-prompt-ghost" aria-hidden>
+      <div ref={ghostRef} className="dsh-suggest-prompt-ghost" style={ghostStyle} aria-hidden>
         {text}
       </div>
     </div>
