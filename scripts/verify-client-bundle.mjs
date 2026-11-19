@@ -69,9 +69,11 @@ const packageName = pkg.name
 
 /**
  * Plugin id the bundle registers its factory under. Mirrors `CLIENT_ID` in
- * `tsdown.config.ts`; it is the `<package>/client` outlet, not the package name.
+ * `tsdown.config.ts`: the BARE package name, because the boot graph keys every
+ * row by package name and a `<package>/client` registration leaves the row
+ * empty ("loaded without registering").
  */
-const CLIENT_ID = '@studyzy/dsh-suggest-prompt/client'
+const CLIENT_ID = packageName
 /** Locale namespace the card's dictionaries register under. */
 const NS = 'suggest-prompt.settings'
 /** Profile entry id of the host plugin, reused as this package's settings namespace. */

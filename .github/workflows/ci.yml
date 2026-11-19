@@ -10,7 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node: [22, 24]
+        # dsh declares `engines.node: ">=24.9.0"` (apps/cli and repo root) and
+        # its CI runs one 24.x line, so this plugin supports Node 24 only.
+        # The patch floor matters: jsdom 30 requires ^24.15.0.
+        node: ['24.15.0']
     steps:
       - uses: actions/checkout@v7
 
@@ -37,8 +40,26 @@ jobs:
       - name: Test
         run: pnpm test
 
+      # `tsdown clean: false` + tsc into lib/types means a deleted source can
+      # leave a stale artifact in the package; the build script wipes `lib`
+      # first, and this assertion keeps it that way.
       - name: Build
         run: pnpm build
+
+      # The bundle evaluates only in a browser: a wrong registration id,
+      # an unseeded `require`, or a missing plugin face fails at page load and
+      # in none of typecheck/test/build. This is the release gate for that.
+      - name: Verify client bundle contract
+        run: pnpm verify:client
+
+      - name: Assert the package ships no stale build output
+        run: |
+          pnpm pack --pack-destination .pack-check >/dev/null
+          tar tzf .pack-check/*.tgz | grep -E 'lib/(invariant|types/tsconfig\.tsbuildinfo)' && {
+            echo "::error::stale build output is in the tarball (run \`pnpm build\` after deleting sources)"
+            exit 1
+          }
+          rm -rf .pack-check
 
   # Browser e2e against a REAL `dsh web` (isolated $DSH_HOME): installs the
   # bundle via `dsh plugin add`, drives the WebUI with Playwright, and checks
@@ -68,7 +89,9 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          # Same floor as `engines.node`; dsh itself requires >=24.9.0 and
+          # jsdom 30 requires ^24.15.0.
+          node-version: '24.15.0'
           cache: pnpm
 
       - name: Install dependencies
@@ -93,12 +116,12 @@ jobs:
           corepack prepare pnpm@10 --activate
           pnpm --version
 
-      # `@next` currently resolves to 0.2.0-rc.2, the harness release this
-      # plugin is adapted to (see AGENTS.md, "Version-critical contracts").
-      # Keep this in step with the pinned @deepseek-ai/* ranges: the composer and
-      # settings-surface selectors in tests/e2e move with the harness release.
-      - name: Install latest dsh
-        run: npm i -g @deepseek-ai/dsh@next
+      # Pinned to the release the plugin's peer floor names, not `@next`: a
+      # floating tag turns the lane green or red for whichever harness happened
+      # to publish that day. Bump this together with `engines.node` and the
+      # `@deepseek-ai/dsh-*` peer range in package.json.
+      - name: Install dsh
+        run: npm i -g @deepseek-ai/dsh@0.2.2-rc.5
 
       - name: Install Playwright browser
         run: pnpm exec playwright install --with-deps chromium

@@ -25,7 +25,7 @@ import { z as zod } from 'zod'
 import type { ZodType } from 'zod'
 import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 // Type-only: resolves ctx.sessionProjections for the scoped unit child.
-import type {} from '@deepseek-ai/dsh-session-projection'
+import type { ProjectionHandle } from '@deepseek-ai/dsh-session-projection'
 // Type-only: resolves ctx.storageDomain for the durable suggestion store.
 import type {} from '@deepseek-ai/dsh-storage-domain'
 // Type-only: resolves ctx.connection for the browser RPC channel.
@@ -229,7 +229,7 @@ export function apply(ctx: Context, config: Config): void {
  * @param ctx - context exposing the LLM, session, projection, storage, and connection services.
  * @param config - required bounded-generation policy.
  */
-function applyWithProjections(ctx: Context, config: Config): void {
+async function applyWithProjections(ctx: Context, config: Config): Promise<void> {
   const states = new WeakMap<Session, SessionState>()
   const tracked = new Set<SessionState>()
   let disposed = false
@@ -257,9 +257,37 @@ function applyWithProjections(ctx: Context, config: Config): void {
     return next
   }
 
+  // `dsh >= 0.2.2` deprecates the registry-level `stateOf(session, key)` read in
+  // favour of the handle an awaited `register()` yields, so the two host-only
+  // folds are registered up front and read through their handles.
+  const lifecycleProjection: ProjectionHandle<SuggestPromptLifecycle> =
+    await ctx.sessionProjections.register<'suggestPromptLifecycle', SuggestPromptLifecycle>({
+      key: 'suggestPromptLifecycle',
+      stateSchema: zod.object({ running: zod.boolean(), turn: zod.number().int().nonnegative(), completed: zod.boolean() }),
+      init: () => ({ running: false, turn: 0, completed: false }),
+      apply: (state, event) => event.type === 'turn/start'
+        ? { running: true, turn: event.data.turn, completed: false }
+        : event.type === 'turn/end'
+          ? { running: false, turn: event.data.turn, completed: event.data.reason.kind === 'completed' }
+          : state,
+      stateVersion: 1,
+    })
+
+  // Host-only transcript fold: the retained transcript that generation reads in
+  // place of the prohibited synchronous session-history scans. It carries no
+  // `wire`, so its state never leaves the host.
+  const transcriptProjection: ProjectionHandle<SuggestPromptTranscriptState> =
+    await ctx.sessionProjections.register<'suggestPromptTranscript', SuggestPromptTranscriptState>({
+      key: 'suggestPromptTranscript',
+      stateSchema: transcriptStateSchema,
+      init: () => EMPTY_TRANSCRIPT_STATE,
+      apply: applyTranscriptProjection,
+      stateVersion: 1,
+    })
+
   /** The retained transcript fold for one session. */
   const transcriptStateOf = (session: Session): SuggestPromptTranscriptState =>
-    ctx.sessionProjections.stateOf(session, 'suggestPromptTranscript') ?? EMPTY_TRANSCRIPT_STATE
+    transcriptProjection.stateOf(session)
 
   /**
    * Answer one browser read. Every failure mode resolves to `null` rather than
@@ -280,8 +308,7 @@ function applyWithProjections(ctx: Context, config: Config): void {
     const opened = await domain()
     const session = ctx.sessions.get(sessionId)
     if (session !== undefined) {
-      const lifecycle = ctx.sessionProjections.stateOf(session, 'suggestPromptLifecycle')
-      if (lifecycle?.running) return null
+      if (lifecycleProjection.stateOf(session).running) return null
     }
     return readSuggestion(opened, sessionId) ?? null
   }
@@ -492,11 +519,11 @@ function applyWithProjections(ctx: Context, config: Config): void {
       const session = ctx.sessions.get(id)
       if (session === undefined) return reply('error', 404)
       const state = stateOf(session)
-      const lifecycle = ctx.sessionProjections.stateOf(session, 'suggestPromptLifecycle')
-      if (disposed || state.pending !== undefined || lifecycle?.running) return reply('busy', 409)
+      const lifecycle = lifecycleProjection.stateOf(session)
+      if (disposed || state.pending !== undefined || lifecycle.running) return reply('busy', 409)
       const transcript = transcriptStateOf(session)
       const turn = transcript.lastCompletedTurn
-      if (!lifecycle?.completed || lifecycle.turn !== turn || turn < 1
+      if (!lifecycle.completed || lifecycle.turn !== turn || turn < 1
         || !transcript.entries.some(entry => entry.turn === turn && entry.text.trim().length > 0)) return reply('no-context')
       const controller = new AbortController()
       state.pending = { turn, controller }
@@ -536,33 +563,7 @@ function applyWithProjections(ctx: Context, config: Config): void {
       }
     },
   }), 'suggest-prompt: manual generation route')
-
-  // A separate host-only lifecycle fold handles restored sessions too, without
-  // reading deprecated history or depending on private execution internals.
-  ctx.sessionProjections.register<'suggestPromptLifecycle', SuggestPromptLifecycle>({
-    key: 'suggestPromptLifecycle',
-    stateSchema: zod.object({ running: zod.boolean(), turn: zod.number().int().nonnegative(), completed: zod.boolean() }),
-    init: () => ({ running: false, turn: 0, completed: false }),
-    apply: (state, event) => event.type === 'turn/start'
-      ? { running: true, turn: event.data.turn, completed: false }
-      : event.type === 'turn/end'
-        ? { running: false, turn: event.data.turn, completed: event.data.reason.kind === 'completed' }
-        : state,
-    stateVersion: 1,
-  })
-
-  // Host-only transcript fold: the retained transcript that generation reads in
-  // place of the prohibited synchronous session-history scans. It carries no
-  // `wire`, so its state never leaves the host. Registered here because the
-  // whole plugin body is scoped to the projection registry.
-  ctx.sessionProjections.register<'suggestPromptTranscript', SuggestPromptTranscriptState>({
-    key: 'suggestPromptTranscript',
-    stateSchema: transcriptStateSchema,
-    init: () => EMPTY_TRANSCRIPT_STATE,
-    apply: applyTranscriptProjection,
-    stateVersion: 1,
-  })
 }
 
-/** Re-exported for the host invariant, which reads committed events. */
+/** Re-exported for callers that assemble the transcript state alongside the plugin. */
 export type { SessionEvent, SuggestPromptSuggestion }

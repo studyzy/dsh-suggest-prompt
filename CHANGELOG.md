@@ -25,6 +25,58 @@ version it targets.
   the caret. Verified on `dsh 0.2.2-rc.1`; the stylesheet offset survives only as
   a fallback for trees with no layout to measure (jsdom, a detached node).
 
+## [1.3.0] - 2026-11-19
+
+Rebuilt against `dsh 0.2.2-rc.5`. **This release does not run on 0.2.1 or
+earlier hosts** — install it only into a deployment on the 0.2.2 line.
+
+### Fixed
+
+- **The browser half loads again: the bundle registers under the bare package
+  name.** 0.2.2 keys every boot-graph row by package name, so a factory
+  registered as `@studyzy/dsh-suggest-prompt/client` never matched its row and
+  the page failed with `client-modules: could not load
+  "@studyzy/dsh-suggest-prompt": … loaded without registering` — the whole
+  plugin was dead in the WebUI. `tsdown.config.ts` now emits
+  `id: "@studyzy/dsh-suggest-prompt"`; the `tsdown` config name keeps the
+  `/client` suffix.
+
+- **Projection reads use the handle 0.2.2 returns.** `register()` now yields
+  `Promise<ProjectionHandle<S>>` and the registry-level
+  `ctx.sessionProjections.stateOf(session, key)` is deprecated and types as
+  `unknown`. The two host-only folds are registered (awaited) at the top of the
+  plugin body and read through `handle.stateOf(session)`; the plugin body is
+  therefore async, and routes/listener are wired a few microtasks after
+  `ctx.plugin` resolves.
+
+### Changed
+
+- **`@deepseek-ai/dsh-invariants` removed, and with it the `./invariant`
+  outlet.** Upstream deleted the runtime invariant registry and every
+  `./invariant` companion (upgrade guide `remove-runtime-invariants`). The
+  session-log prohibition is unchanged as a rule and still enforced by a test:
+  completing a turn on a mounted plugin must leave no `suggest-prompt/`-shaped
+  event in the log while still landing the suggestion in the store. Importing
+  `@studyzy/dsh-suggest-prompt/invariant` is a breaking removal.
+
+- **Harness peers are floor-bounded, not caret-bounded:**
+  `@deepseek-ai/dsh-*: >=0.2.2-rc.5 <0.3.0`, `@deepseek-ai/cordis: ~4.1.0`.
+  `^0.2.2-rc.5` resolves to `0.2.2-*` only, so the range is written explicitly.
+
+- **`zod` pinned to `4.6.6`**, the exact version the 0.2.2 harness packages
+  depend on. A caret range resolved a second copy, and a `ZodType` from one
+  copy is not assignable to the other (schema parameters failed to typecheck).
+
+- **`pnpm.overrides` also pins `dsh-scope` and `dsh-storage`**, the two peer
+  packages 0.2.2 introduced; without them pnpm resolved `dsh-scope@0.1.0-rc.8`
+  and dragged a whole `0.2.0-rc.2` subtree back in.
+
+- **`pnpm build` wipes `lib` before emitting**, and the incremental
+  `tsBuildInfoFile` moved to the repo root. `tsdown` runs with `clean: false`
+  and `tsc` writes into `lib/types`, so a deleted source (this release: the
+  invariant companion) left its stale `.js`/`.d.ts`/`tsbuildinfo` in the
+  published tarball.
+
 ## [1.2.3] - 2026-10-28
 
 ### Fixed

@@ -12,7 +12,6 @@
  */
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import LlmRuntime, { createAssistantMessage, createUserMessage, LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, Message, StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
@@ -20,7 +19,6 @@ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import * as suggestPromptPlugin from '@studyzy/dsh-suggest-prompt'
 import type { Config } from '@studyzy/dsh-suggest-prompt'
-import { apply as installCompanion } from '../src/invariant.ts'
 import {
   buildTranscript,
   generateSuggestion,
@@ -1155,48 +1153,34 @@ describe('generateSuggestion direct boundary', () => {
   })
 })
 
-describe('suggest-prompt log prohibition invariant', () => {
-  /** A context with the invariant registry and companion mounted over sessions. */
-  async function invariantCtx(): Promise<Context> {
-    const ctx = new Context()
-    await ctx.plugin(InvariantRegistry, { enabled: true })
-    await ctx.plugin(SessionStore)
-    await ctx.plugin({ inject: ['invariants'], apply: installCompanion })
-    contexts.push(ctx)
-    return ctx
-  }
+describe('suggest-prompt log prohibition', () => {
+  // `@deepseek-ai/dsh-invariants` (and every package's `./invariant` companion)
+  // was removed in the 0.2.2 line, so the prohibition is asserted on the real
+  // plugin mount instead of a registry sink: the plugin must never commit a
+  // `suggest-prompt`-shaped event, because such an event is outside the
+  // harness's closed `KNOWN_SESSION_EVENT_TYPES` and makes the log unreadable
+  // on cold read (issue #4).
 
-  it('accepts ordinary session traffic', async () => {
-    const ctx = await invariantCtx()
+  it('completes a turn without writing any suggest-prompt event', async () => {
+    const { ctx, domain } = await bench()
+    ctx.llm.registerAdapter(['main'], new ImmediateAdapter('继续修复登录页'))
+    const session = ctx.sessions.create(SessionId('log-prohibition'))
+    appendTurn(session, 1, '修复登录页', '已修复')
+    await settle()
+    expect(storedRecords(domain)).toHaveLength(1)
+    const types = session.snapshotEvents().map(event => event.type)
+    expect(types.some(type => type.startsWith('suggest-prompt/') || type.startsWith('plugin:suggest-prompt/')))
+      .toBe(false)
+    expect(types).toContain('turn/end')
+  })
+
+  it('still accepts ordinary session traffic on a mounted plugin', async () => {
+    const { ctx } = await bench()
     const session = ctx.sessions.create(SessionId('inv-ordinary'))
     expect(() => {
       session.append('turn/start', { turn: 1 })
       session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     }).not.toThrow()
-  })
-
-  it('rejects the historical suggestion event type on commit', async () => {
-    // This is the regression that made sessions unloadable: the suggestion must
-    // live in the storage domain, never in the agent's conversation log.
-    const ctx = await invariantCtx()
-    const session = ctx.sessions.create(SessionId('inv-suggested'))
-    expect(() => session.append('suggest-prompt/suggested' as never, {
-      version: 1, turn: 1, baseSeq: 2, text: '建议', truncated: false, acceptKey: 'Tab',
-    } as never)).toThrow(/must not write session-log events/)
-  })
-
-  it('rejects the plugin-record spelling as well', async () => {
-    const ctx = await invariantCtx()
-    const session = ctx.sessions.create(SessionId('inv-plugin-record'))
-    expect(() => session.append('plugin:suggest-prompt/suggested' as never, {
-      version: 1, turn: 1, baseSeq: 2, text: '建议', truncated: false, acceptKey: 'Tab',
-    } as never)).toThrow(/must not write session-log events/)
-  })
-
-  it('ignores foreign plugin records', async () => {
-    const ctx = await invariantCtx()
-    const session = ctx.sessions.create(SessionId('inv-foreign'))
-    expect(() => session.append('plugin:other/state', { anything: true } as never)).not.toThrow()
   })
 })
 

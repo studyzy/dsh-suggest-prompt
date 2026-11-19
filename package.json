@@ -1,7 +1,7 @@
 {
   "name": "@studyzy/dsh-suggest-prompt",
   "description": "为 DeepSeek Harness 开发的「建议提示词」插件：单个 bundle 集成了宿主生成插件与 Web 输入框幽灵文字界面。每个 agent 回合完成后，通过一次有界的辅助 LLM 调用生成一条建议的下一条提示词，存入插件自己的 storage domain，并经 /api 网关上的插件路由提供给浏览器；Web 端把它渲染为输入框内的幽灵占位文字，通过可配置的快捷键（默认 Tab）采纳进草稿。会话日志零写入。",
-  "version": "1.2.3",
+  "version": "1.3.0",
   "publishConfig": {
     "access": "public"
   },
@@ -12,7 +12,7 @@
   "type": "module",
   "packageManager": "pnpm@9.15.0",
   "engines": {
-    "node": "^22.19 || >=24"
+    "node": ">=24.9.0"
   },
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -20,10 +20,6 @@
     ".": {
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
-    },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
     },
     "./types": {
       "types": "./lib/types/types.d.ts",
@@ -54,7 +50,7 @@
   "license": "MIT",
   "scripts": {
     "prepare": "pnpm build",
-    "build": "tsc -p tsconfig.json && tsdown",
+    "build": "rm -rf lib && tsc -b tsconfig.json --force && tsdown",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "verify:client": "node scripts/verify-client-bundle.mjs",
@@ -63,70 +59,70 @@
     "test:e2e:local": "vitest run -c vitest.e2e.config.ts tests/e2e/suggest-local.e2e.ts"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-client-connection": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-locale": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-store": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-conversation": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-primitives": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-renderer": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-settings": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-invariants": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-llm": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-session": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-session-projection": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-storage-domain": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-timeout": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-util-values": "^0.2.0-rc.2",
+    "@deepseek-ai/cordis": "~4.1.0",
+    "@deepseek-ai/dsh-client-connection": ">=0.2.2-rc.5 <0.3.0",
+    "@deepseek-ai/dsh-client-locale": ">=0.2.2-rc.5 <0.3.0",
+    "@deepseek-ai/dsh-client-store": ">=0.2.2-rc.5 <0.3.0",
+    "@deepseek-ai/dsh-client-ui-conversation": ">=0.2.2-rc.5 <0.3.0",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.2-rc.5 <0.3.0",
+    "@deepseek-ai/dsh-client-ui-renderer": ">=0.2.2-rc.5 <0.3.0",
+    "@deepseek-ai/dsh-client-ui-settings": ">=0.2.2-rc.5 <0.3.0",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.2.2-rc.5 <0.3.0",
+    "@deepseek-ai/dsh-llm": ">=0.2.2-rc.5 <0.3.0",
+    "@deepseek-ai/dsh-session": ">=0.2.2-rc.5 <0.3.0",
+    "@deepseek-ai/dsh-session-projection": ">=0.2.2-rc.5 <0.3.0",
+    "@deepseek-ai/dsh-storage-domain": ">=0.2.2-rc.5 <0.3.0",
+    "@deepseek-ai/dsh-timeout": ">=0.2.2-rc.5 <0.3.0",
+    "@deepseek-ai/dsh-util-values": ">=0.2.2-rc.5 <0.3.0",
     "react": "^19.3.0"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "^3.18.3",
-    "zod": "^4.4.3"
+    "@deepseek-ai/schemastery": "^3.19.0",
+    "zod": "4.6.6"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/cordis": "~4.1.0",
     "@deepseek-ai/cordis-plugin-include": "^1.0.6",
     "@deepseek-ai/cordis-plugin-loader": "^1.0.2",
-    "@deepseek-ai/dsh-client-locale": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-store": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-test-runtime": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-conversation": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-dockkit": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-primitives": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-renderer": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-settings": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-slots": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-invariants": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-llm": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-llm-deepseek": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-session": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-session-projection": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-timeout": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-util-values": "^0.2.0-rc.2",
-    "@playwright/test": "1.64.1",
+    "@deepseek-ai/dsh-client-locale": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-store": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-test-runtime": "^0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-ui-conversation": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-ui-dockkit": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-ui-settings": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-ui-slots": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-llm": "^0.2.2-rc.5",
+    "@deepseek-ai/dsh-llm-deepseek": "^0.2.2-rc.5",
+    "@deepseek-ai/dsh-session": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-session-projection": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-timeout": "^0.2.2-rc.5",
+    "@deepseek-ai/dsh-util-values": "^0.2.2-rc.5",
+    "@playwright/test": "1.65.1",
     "@testing-library/react": "^16.1.0",
     "@types/node": "^26.6.4",
     "@types/react": "~19.3.0",
-    "jsdom": "^30.1.2",
+    "jsdom": "^31.0.1",
     "lightningcss": "^1.32.0",
-    "playwright": "1.64.1",
+    "playwright": "1.65.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "simple-icons": "16.35.0",
+    "simple-icons": "16.38.0",
     "tsdown": "^0.23.0",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3",
-    "@deepseek-ai/dsh-client-connection": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-storage-domain": "0.2.0-rc.2"
+    "@deepseek-ai/dsh-client-connection": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-storage-domain": "0.2.2-rc.5"
   },
   "pnpm": {
     "overrides": {
       "@deepseek-ai/dsh-compact": "file:./stubs/dsh-compact",
       "@deepseek-ai/dsh-type-meta": "file:./stubs/dsh-type-meta",
       "@deepseek-ai/dsh-environment": "file:./stubs/dsh-environment",
-      "@deepseek-ai/dsh-*": "0.2.0-rc.2"
+      "@deepseek-ai/dsh-*": "0.2.2-rc.5",
+      "@deepseek-ai/dsh-scope": "0.2.2-rc.5",
+      "@deepseek-ai/dsh-storage": "0.2.2-rc.5"
     }
   }
 }
