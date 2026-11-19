@@ -17,16 +17,17 @@ const CSS = `
   font: inherit; font-size: 12px; line-height: 1.2; white-space: nowrap;
   cursor: pointer; touch-action: manipulation;
 }
-.dsh-suggest-action:hover { background: var(--dsw-alias-fill-tertiary, #80808018); }
-.dsh-suggest-action:focus-visible { outline: 2px solid var(--dsw-alias-tint, #729dff); outline-offset: 2px; }
+.dsh-suggest-action:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover, #80808018); }
+.dsh-suggest-action:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary, var(--dsw-alias-brand-primary, #729dff)); outline-offset: 2px; }
 .dsh-suggest-action:disabled { opacity: .6; cursor: wait; }
 .dsh-suggest-feedback {
   position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 3;
   width: max-content; max-width: min(260px, calc(100vw - 48px));
   padding: 8px 10px; border-radius: 8px; font-size: 12px; line-height: 1.5;
   color: var(--dsw-alias-label-primary, inherit);
-  background: var(--dsw-alias-background-primary, #25262a);
-  border: 1px solid var(--dsw-alias-separator, #80808040);
+  background: var(--dsw-alias-bg-layer-3, var(--dsw-alias-bg-base, #ffffff));
+  border: 1px solid var(--dsw-alias-border-l2, #80808040);
+  box-shadow: var(--dsw-elevation-panel, var(--dsw-shadow-lv2, 0 4px 12px rgba(0, 0, 0, 0.08)));
 }
 @media (pointer: coarse) { .dsh-suggest-action { min-height: 44px; } }
 `
