@@ -15,7 +15,7 @@ This repo is the **authoritative source of record** for one bundle package `@stu
 
 ## Commands
 
-Requires Node `>=24.9.0` — the floor dsh declares in `engines.node` (`apps/cli` and the harness root), with one 24.x line in dsh's CI. A development install needs `^24.15.0` for jsdom 30's engines; CI pins `24.15.0`. Requires `pnpm`. Run everything from the repo root (single package, no workspace fan-out).
+Requires Node `>=24.9.0` — the floor dsh declares in `engines.node` (`apps/cli` and the harness root), with one 24.x line in dsh's CI. A development install needs `^24.15.0` for jsdom 31's engines; CI pins `24.15.0`. Requires `pnpm`. Run everything from the repo root (single package, no workspace fan-out).
 
 ```sh
 pnpm install        # uses pnpm.overrides mapping 3 unpublished @deepseek-ai packages to local empty stubs/ (and pinning @deepseek-ai/dsh-* to 0.2.2-rc.5)
