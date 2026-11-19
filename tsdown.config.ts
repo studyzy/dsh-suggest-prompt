@@ -5,7 +5,7 @@ import type { UserConfig } from 'tsdown'
  * closure bundle for the DeepSeek Harness web client.
  *
  * - `tsc` emits declarations (and the host runtime JS) to `lib/types/`.
- * - The host pass bundles the runtime entries to `lib/{index,invariant}.js`;
+ * - The host pass bundles the runtime entry to `lib/index.js`;
  *   declared dependencies and peers stay external so the running harness
  *   resolves them from its own install.
  * - The client pass bundles the browser half from `src/browser/index.ts` to
@@ -21,11 +21,18 @@ const HOST_EXTERNALS: readonly string[] = [
   '@deepseek-ai/dsh-timeout',
   '@deepseek-ai/dsh-llm',
   '@deepseek-ai/dsh-util-values',
-  '@deepseek-ai/dsh-invariants',
   'zod',
 ]
 
-const CLIENT_ID = '@studyzy/dsh-suggest-prompt/client'
+/**
+ * Registration id of the browser bundle. `dsh >= 0.2.2` boots a module graph
+ * whose every row is keyed by the bare package name (`BootModuleRow.id` ===
+ * entry name === package name) and rejects the row when the script registers
+ * anything else — `loaded without registering "<package>"`. Only the
+ * `tsdown` config name keeps the `/client` suffix (the harness's own
+ * `clientBundle()` builder does the same).
+ */
+const CLIENT_ID = '@studyzy/dsh-suggest-prompt'
 /**
  * Client-bundle externals. In `dsh >= 0.2.0` a fetch bundle may only require the
  * shell's platform-singleton seed words; requiring anything else misses the
@@ -53,7 +60,7 @@ const CLIENT_EXTERNALS: readonly string[] = [
 
 const host: UserConfig = {
   name: '@studyzy/dsh-suggest-prompt',
-  entry: ['lib/types/{index,invariant}.js'],
+  entry: ['lib/types/index.js'],
   outDir: 'lib',
   format: 'esm',
   platform: 'node',
@@ -67,7 +74,7 @@ const host: UserConfig = {
 }
 
 const client: UserConfig = {
-  name: CLIENT_ID,
+  name: `${CLIENT_ID}/client`,
   entry: { client: 'src/browser/index.ts' },
   outDir: 'lib',
   format: 'cjs',

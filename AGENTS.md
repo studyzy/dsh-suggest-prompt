@@ -10,16 +10,16 @@ This repo is the **authoritative source of record** for one bundle package `@stu
 
 | Half | Outlet | Role |
 |---|---|---|
-| host / node | `.`, `./invariant`, `./types` | On `turn/end` (reason `completed`), builds a bounded transcript, calls `ctx.llm`, sanitizes the reply, persists the suggestion in the plugin's own storage domain, and serves it to the browser over a plugin-owned route on the shared `/api` gateway. Writes NOTHING to the session log. |
+| host / node | `.`, `./types` | On `turn/end` (reason `completed`), builds a bounded transcript, calls `ctx.llm`, sanitizes the reply, persists the suggestion in the plugin's own storage domain, and serves it to the browser over a plugin-owned route on the shared `/api` gateway. Writes NOTHING to the session log. |
 | browser | `./client` | Polls the host route for the stored suggestion and renders it as ghost placeholder text in the composer (`conversation.input.overlay` slot), plus a WebUI settings card. |
 
 ## Commands
 
-Requires Node `^22.19` or `>=24` and `pnpm`. Run everything from the repo root (single package, no workspace fan-out).
+Requires Node `>=24.9.0` — the floor dsh declares in `engines.node` (`apps/cli` and the harness root), with one 24.x line in dsh's CI. A development install needs `^24.15.0` for jsdom 30's engines; CI pins `24.15.0`. Requires `pnpm`. Run everything from the repo root (single package, no workspace fan-out).
 
 ```sh
-pnpm install        # uses pnpm.overrides mapping 3 unpublished @deepseek-ai packages to local empty stubs/ (and pinning @deepseek-ai/dsh-* to 0.2.0-rc.2)
-pnpm build          # tsc -p tsconfig.json && tsdown: host ESM (lib/{index,invariant}.js) + browser bundle (lib/client.js)
+pnpm install        # uses pnpm.overrides mapping 3 unpublished @deepseek-ai packages to local empty stubs/ (and pinning @deepseek-ai/dsh-* to 0.2.2-rc.5)
+pnpm build          # wipes lib, then `tsc -b tsconfig.json --force && tsdown`: host ESM (lib/index.js) + browser bundle (lib/client.js). --force is required: with lib gone, an incremental tsc would consider the project up to date and emit nothing.
 pnpm typecheck      # tsc --noEmit
 pnpm test           # vitest run — the unit lane
 pnpm verify:client  # execute the real lib/client.js through a stand-in module loader and check the browser-kernel contract
@@ -39,7 +39,7 @@ Two test lanes with separate Vitest configs:
 - **E2E lane** (`vitest.e2e.config.ts`, `pnpm test:e2e` / `pnpm test:e2e:local`): `tests/e2e/**/*.e2e.ts` only. Spawns a **real** `dsh web` and drives the WebUI with Playwright; requires `DEEPSEEK_API_KEY` (suite is `skipIf`-gated on it).
   - `tests/e2e/suggest.e2e.ts` (CI lane): isolated `$DSH_HOME` in a tmpdir — never touches the real `~/.dsh`. Installs the bundle via `dsh plugin --profile web add`, walks the first-run onboarding to store the key, connects a workspace, sets the model on the 建议提示词 card, then asserts the ghost suggestion appears, the native placeholder is hidden (no double ghost text), and Tab adopts the suggestion. Failure evidence (screenshot + page-state JSON) is saved under `.artifacts/`.
   - `tests/e2e/suggest-local.e2e.ts` (local lane): runs against the developer's **real** `~/.dsh` and writes to the real `~/.dsh/settings.yaml` (an intentional side effect); assumes dsh is globally installed and already configured. Headful on macOS.
-- In CI, the `build` job (typecheck/test/build on Node 22+24) is the **gate**; the e2e job is `continue-on-error` (needs the live model + secret) and is a signal only. CI installs with `--ignore-scripts` because the root `prepare` script runs `pnpm build`.
+- In CI, the `build` job (typecheck → test → build → `verify:client` → stale-output check on Node 24.15.0) is the **gate**; the e2e job is `continue-on-error` (needs the live model + secret) and is a signal only, pinned to `dsh@0.2.2-rc.5` rather than the floating `@next` tag. CI installs with `--ignore-scripts` because the root `prepare` script runs `pnpm build`.
 
 ## Architecture
 
@@ -63,7 +63,6 @@ One file per responsibility:
 - `transcript.ts` — the host-only `suggestPromptTranscript` fold: `applyTranscriptProjection` retains, per committed event, the newest completed turn, its start boundary, and the redacted user/assistant pairs inside a bounded window. This replaces the old `session.events` scan because `dsh >= 0.2.0` deprecates synchronous history reads for new production callers (see the harness note `2026-09-09-deprecate-synchronous-session-event-reads`).
 - `generate.ts` — the bounded generation pipeline: config validation (`resolveSuggestPromptConfig`), transcript building over fold state, route resolution (inherits main request route when `provider`/`model` unset), deadline-fused dispatch via `ctx.llm`, and reasoning disabled (`ReasoningEffortId('off')`, retried once without the field if rejected). Generation is PURE with respect to durability: it returns the suggestion and the caller (`index.ts`) persists it; nothing is written pre-dispatch. `deepFreeze` comes from `@deepseek-ai/dsh-util-values` (it left `dsh-llm`).
 - `sanitize.ts` — pure functions: `redactSecrets` (masks AWS/OpenAI/GitHub/Slack/JWT/Stripe secret shapes), `sanitizeSuggestion` (strips control sequences/fences/quotes, collapses to one line), `cleanSuggestion`, `shouldFilterSuggestion` (semantic filter: meta-text, evaluative filler, assistant voice → "no suggestion"), `hasCJK` (reply-language selection).
-- `invariant.ts` — the session-log prohibition, enforced at runtime: any committed event whose type starts with `suggest-prompt/` or `plugin:suggest-prompt/` fails. Committed delivery only — an install-time scan of pre-existing sessions is prohibited now that synchronous history reads are deprecated.
 - `rpc-contract.ts` — the constants both halves share (`SUGGEST_ROUTE_PATH`, `SUGGEST_ROUTE_METHOD`, `SUGGEST_RPC_GET`, plus the explicit `SUGGEST_GENERATE_ROUTE_PATH` and its `SuggestPromptGenerateStatus` reply union). Import-free on purpose: the client bundle may only `require` the shell-seeded platform modules.
 
 ### Browser half (`src/browser/`)
@@ -78,7 +77,7 @@ One file per responsibility:
 - `settings-locales.ts` — `zh`/`en` locale dictionaries for the card.
 - `SettingsCard.tsx` — the React settings card UI. The **same component is rendered by three surfaces** through the two slot registrations: `plugins.item` with `view: 'summary'` (the one-line description on the card, resolved from the `description` locale key), `plugins.item` with `view: 'page'` (the form inside the card's detail page), and `plugins.bundle.config` with `view: 'page'` (the form on the package detail page). It must branch on `view` — and because the `summary` branch would otherwise change the hook count between renders (React throws on "Rendered fewer hooks than expected"), summary is a separate hook-free component rather than an early return before the existing hooks.
 
-### Version-critical contracts (`dsh 0.2.0-rc.2`)
+### Version-critical contracts (`dsh >= 0.2.2-rc.5`)
 
 These are the seams that broke on the 0.1.1 → 0.2.0 upgrade; keep them in sync when the harness advances:
 
@@ -89,7 +88,7 @@ These are the seams that broke on the 0.1.1 → 0.2.0 upgrade; keep them in sync
   - **Both surfaces must share one face.** The registration's `inject` callback is called per surface, so `inject: () => face` built once (`const face = settings.inject()`) is what makes a draft edited in one place visible in the other and makes Save a single revision-fenced write. Building a fresh face per call (`inject: () => settings.inject()`) does not error: each surface keeps its own draft table, edits made in one are invisible in the other, and saving from the stale one writes its own draft back.
   - A field reaches that page **only if it is marked `volatile()`** (`@deepseek-ai/schemastery >= 3.18.3`). An entry with no volatile field is omitted from `settings.describe` entirely, so the client card mounts and then renders nothing — a silent failure with no error anywhere. Only genuinely user-editable preferences should be volatile; composition bounds stay plain so they do not become form fields.
   - A volatile field is handed to the plugin as a live **reference** (`{ get(), set() }`), not the value itself. `resolveSuggestPromptConfig` unwraps every field at the config boundary (`unwrapVolatileFields`); reading one as a plain value yields `[object Object]` or fails validation. This is also why `Config` is declared separately from its schema — `volatile()` brands its output type, which would otherwise leak into every consumer of the runtime policy type.
-- **Projections**: `init(header, inheritedEventCount)`, `wire` fields are `readonly`, `stateVersion` must be a non-negative integer, and `ctx.sessionProjections.stateOf(session, key)` is the read face used in place of session-history scans.
+- **Projections**: `init(header, inheritedEventCount)`, `wire` fields are `readonly`, `stateVersion` must be a non-negative integer. `register()` returns `Promise<ProjectionHandle<S>>` and `handle.stateOf(session)` is the read face used in place of session-history scans — the registry-level `ctx.sessionProjections.stateOf(session, key)` is deprecated in `0.2.2` and types as `unknown`. Both host-only units are therefore registered (awaited) at the top of the plugin body, which makes `applyWithProjections` async: routes and the `turn/end` listener are wired a few microtasks after `ctx.plugin` resolves.
 
 ### Key invariants / behavioral rules
 
@@ -98,5 +97,5 @@ These are the seams that broke on the 0.1.1 → 0.2.0 upgrade; keep them in sync
 - **One in-flight generation per session**; the next completed turn aborts (supersedes) the previous one. Automatic and manual (on-demand) generation share that single slot: a manual call while anything else is in flight answers `409 busy` rather than starting a second round.
 - **A manual call never retires a tip that already answers its turn.** Automatic generation always clears the previous record first, because a new completed turn has superseded it. An explicit call can target a turn that is already answered, and a transient model failure there must not trade a working suggestion for nothing — so the retire is skipped when `lastSuggestedTurn >= turn`. When it does target an unanswered newer turn, the retire stands and the superseded older record must not resurface.
 - **A retired suggestion is never served**: the moment a completed turn begins generating, the host clears the previous record (`retirePrevious`) before calling the model. Without it the composer serves the *superseded* tip for the entire generation — it stops hiding ghost text as soon as `running` drops, the poll then reads a store still holding the older turn's text, and only the final write displaces it (the stale window is exactly the model's latency). Clearing is a step of the same awaited chain that generates, so a poll landing in between answers `null` rather than a retracted tip. A duplicate `turn/end` for an already-answered turn short-circuits in `alreadySuggested` and clears nothing.
-- **Zero session-log writes**: the suggestion is persisted in the plugin's own storage domain and served over `connection.fetch`. Nothing is ever appended to the session log — private `SessionEventMap` types are outside the harness's closed `KNOWN_SESSION_EVENT_TYPES`, and `0.2.0-rc.2` cannot mark an appended event `ignorable`, so one such event made the whole log unreadable on cold read (issue #4). `src/invariant.ts` enforces this prohibition at runtime: any committed event whose type starts with `suggest-prompt/` or `plugin:suggest-prompt/` fails the invariant.
+- **Zero session-log writes**: the suggestion is persisted in the plugin's own storage domain and served over `connection.fetch`. Nothing is ever appended to the session log — private `SessionEventMap` types are outside the harness's closed `KNOWN_SESSION_EVENT_TYPES`, and `0.2.0-rc.2` cannot mark an appended event `ignorable`, so one such event made the whole log unreadable on cold read (issue #4). `@deepseek-ai/dsh-invariants` was removed upstream in the 0.2.2 line (upgrade guide `remove-runtime-invariants`), so the prohibition is asserted by a test instead: completing a turn on a mounted plugin leaves no `suggest-prompt/`-shaped event in the log and still lands the suggestion in the store.
 - **Re-arm without a call**: deleting back to an empty draft re-shows the stored suggestion with no new model request (the poll picks it back up).

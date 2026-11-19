@@ -11,11 +11,14 @@ export default defineConfig({
     alias: {
       '@studyzy/dsh-suggest-prompt/client': fileURLToPath(new URL('src/browser/index.ts', import.meta.url)),
       '@studyzy/dsh-suggest-prompt/types': fileURLToPath(new URL('src/types.ts', import.meta.url)),
-      '@studyzy/dsh-suggest-prompt/invariant': fileURLToPath(new URL('src/invariant.ts', import.meta.url)),
       '@studyzy/dsh-suggest-prompt': fileURLToPath(new URL('src/index.ts', import.meta.url)),
     },
   },
   test: {
+    // `@testing-library/react` needs React's test build (`act`); an inherited
+    // NODE_ENV=production resolves `react-dom/test-utils` to its production
+    // entry, where `act` is absent and every render throws.
+    env: { NODE_ENV: 'test' },
     include: ['tests/**/*.spec.ts', 'tests/**/*.spec.tsx'],
     exclude: ['**/provider.e2e.ts', '**/tests/e2e/**'],
     // The published dsh-client-* packages ship CSS modules (e.g. primitives'

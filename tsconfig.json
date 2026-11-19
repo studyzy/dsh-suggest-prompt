@@ -22,7 +22,10 @@
     "rewriteRelativeImportExtensions": true,
     "rootDir": "src",
     "outDir": "lib/types",
-    "composite": true
+    "composite": true,
+    // Outside `lib`, which `build` wipes: a deleted source must not leave its
+    // stale `.js`/`.d.ts` in the published package, and the cache must survive.
+    "tsBuildInfoFile": ".tsbuildinfo"
   },
   "include": ["src"]
 }

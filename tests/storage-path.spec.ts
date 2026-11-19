@@ -196,6 +196,13 @@ async function mount(reply = 'run the focused suite', seed?: Record<string, unkn
     apply: applyPlugin,
     Config: PluginConfig,
   }, CONFIG)
+  // The plugin body is async from `dsh >= 0.2.2` on: it awaits its projection
+  // handles before it wires the turn listener and both routes, so activation
+  // completes a few microtasks after `ctx.plugin` resolves. Wait for the
+  // route itself rather than for a timer.
+  for (let attempt = 0; handler === undefined && attempt < 50; attempt += 1) {
+    await new Promise(resolve => setTimeout(resolve, 0))
+  }
 
   const result: Mounted = {
     ctx,

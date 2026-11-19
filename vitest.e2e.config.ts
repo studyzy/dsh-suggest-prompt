@@ -15,7 +15,6 @@ export default defineConfig({
     alias: {
       '@studyzy/dsh-suggest-prompt/client': fileURLToPath(new URL('src/browser/index.ts', import.meta.url)),
       '@studyzy/dsh-suggest-prompt/types': fileURLToPath(new URL('src/types.ts', import.meta.url)),
-      '@studyzy/dsh-suggest-prompt/invariant': fileURLToPath(new URL('src/invariant.ts', import.meta.url)),
       '@studyzy/dsh-suggest-prompt': fileURLToPath(new URL('src/index.ts', import.meta.url)),
     },
   },
