@@ -40,6 +40,15 @@ updates:
     ignore:
       # Harness internals are pinned and adapted by hand; see the header note.
       - dependency-name: '@deepseek-ai/*'
+      # `zod` is a harness contract as well, even though the name is not
+      # scoped: the harness declares an exact zod, and this package passes its
+      # own zod schemas into harness APIs (`domainTable`,
+      # `sessionProjections.register`). A bump ahead of the harness's pin makes
+      # pnpm install a second copy, and the two `ZodType` types are nominally
+      # distinct — typecheck then fails at every schema boundary (dependabot PR
+      # #21 did exactly that). Bump it by hand together with the harness; see
+      # AGENTS.md "Version-critical contracts".
+      - dependency-name: 'zod'
     groups:
       dev-tooling:
         dependency-type: development
