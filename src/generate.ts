@@ -43,6 +43,14 @@ const SUGGEST_REASONING_EFFORT = ReasoningEffortId('off')
  */
 const SUGGEST_PURPOSE = 'suggest-prompt' as unknown as Exclude<GenerateOptions['purpose'], undefined>
 
+/**
+ * Output-budget multiplier for the one retry after a thinking model spends its
+ * whole budget on reasoning. `reasoningEffort: 'off'` only disables thinking on
+ * adapters that honor it (the pi-ai adapter omits the option instead), so the
+ * fallback must not depend on any provider-specific flag.
+ */
+const THINKING_RETRY_MAX_TOKENS_MULTIPLIER = 4
+
 /** Validated immutable suggestion policy. */
 export interface ResolvedSuggestPromptConfig extends Config {}
 
@@ -320,6 +328,28 @@ function finishError(finish: FinishReason): Error | undefined {
   }
 }
 
+/** One drained auxiliary call: its content blocks and terminal finish reason. */
+interface DrainResult {
+  readonly blocks: ReturnType<BlockAssembler['blocks']>
+  readonly finish: FinishReason
+}
+
+/**
+ * Whether a reply spent its output budget on reasoning and emitted no text.
+ *
+ * A genuine "stay silent" reply is a `stop` with an empty text block and no
+ * reasoning; that stays a silent no-suggestion. Terminal errors and tool calls
+ * are never masks for this miss — they remain failures.
+ * @param result - one drained auxiliary call.
+ * @returns true when a larger output budget is worth one retry.
+ */
+function isThinkingOnlyMiss(result: DrainResult): boolean {
+  if (result.finish.kind !== 'stop' && result.finish.kind !== 'max-tokens') return false
+  const hasText = result.blocks.some(block => block.type === 'text' && block.text.trim().length > 0)
+  if (hasText) return false
+  return result.blocks.some(block => block.type === 'reasoning') || result.finish.kind === 'max-tokens'
+}
+
 /**
  * Generate one suggestion for a completed turn through the shared auxiliary
  * LLM call.
@@ -359,12 +389,12 @@ export async function generateSuggestion(
     source: { kind: 'suggest-prompt', plugin: 'dsh-suggest-prompt', form: 'transcript' },
   })]
   using callDeadline = deadline(signal, config.timeoutMs, SUGGEST_PROMPT_TIMEOUT_CODE)
-  const requestOptions = (reasoningOff: boolean): GenerateOptions => deepFreeze({
+  const requestOptions = (reasoningOff: boolean, maxTokens: number): GenerateOptions => deepFreeze({
     provider: route.provider,
     model: route.model,
     messages,
     system,
-    maxTokens: config.maxOutputTokens,
+    maxTokens,
     sessionId: session.id,
     purpose: SUGGEST_PURPOSE,
     ...(reasoningOff ? { reasoningEffort: SUGGEST_REASONING_EFFORT } : {}),
@@ -372,27 +402,44 @@ export async function generateSuggestion(
   })
   // The request is tried reasoning-off first (fast and cheap); a model whose
   // adapter rejects `off` (UNSUPPORTED_REASONING_EFFORT) retries without the
-  // override so a suggestion still generates. Nothing is logged per attempt —
-  // the only durable trace of the exchange is the suggestion record below.
+  // override so a suggestion still generates. The only durable trace of the
+  // exchange is the suggestion record; the thinking-model fallback below is
+  // the one case that reports a warning.
   callDeadline.signal.throwIfAborted()
-  const drain = async (options: GenerateOptions): Promise<ReturnType<BlockAssembler['blocks']>> => {
+  const drain = async (options: GenerateOptions): Promise<DrainResult> => {
     const assembler = new BlockAssembler()
     for await (const chunk of ctx.llm.stream(options)) {
       callDeadline.signal.throwIfAborted()
       assembler.push(chunk)
     }
     callDeadline.signal.throwIfAborted()
-    const terminalError = finishError(assembler.finish)
-    if (terminalError !== undefined) throw terminalError
-    return assembler.blocks()
+    const result: DrainResult = { blocks: assembler.blocks(), finish: assembler.finish }
+    const terminalError = finishError(result.finish)
+    // A reasoning-only miss is handled by the retry below instead of failing
+    // here, so the caller can inspect the blocks that explain the miss.
+    if (terminalError !== undefined && !isThinkingOnlyMiss(result)) throw terminalError
+    return result
   }
-  let blocks: ReturnType<BlockAssembler['blocks']>
+  let reasoningOff = true
+  let result: DrainResult
   try {
-    blocks = await drain(requestOptions(true))
+    result = await drain(requestOptions(true, config.maxOutputTokens))
   } catch (error: unknown) {
     if ((error as { code?: unknown } | null)?.code !== 'UNSUPPORTED_REASONING_EFFORT') throw error
-    blocks = await drain(requestOptions(false))
+    reasoningOff = false
+    result = await drain(requestOptions(false, config.maxOutputTokens))
   }
+  // A thinking model can consume the entire output budget on reasoning and
+  // return no text. `off` cannot prevent that on every adapter, so retry once
+  // with a larger budget — provider-agnostic, and visible instead of silent.
+  if (isThinkingOnlyMiss(result)) {
+    ctx.logger.warn('suggest-prompt: suggestion model returned reasoning-only output; retrying with a larger output budget')
+    result = await drain(requestOptions(reasoningOff, config.maxOutputTokens * THINKING_RETRY_MAX_TOKENS_MULTIPLIER))
+    if (isThinkingOnlyMiss(result)) {
+      throw new Error('suggest-prompt: suggestion model returned reasoning-only output even with a larger output budget')
+    }
+  }
+  const blocks = result.blocks
   if (blocks.some(block => block.type === 'tool-call')) {
     throw new Error('suggest-prompt: suggestion output must contain text only')
   }

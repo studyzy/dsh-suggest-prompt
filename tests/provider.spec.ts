@@ -61,6 +61,30 @@ class ImmediateAdapter extends LlmAdapter {
   }
 }
 
+/**
+ * Adapter for a thinking model: the first budget is spent entirely on reasoning,
+ * so the reply carries no text; a larger budget leaves room for the answer.
+ */
+class ThinkingAdapter extends LlmAdapter {
+  readonly requests: GenerateOptions[] = []
+  readonly answerOnRetry: string | null
+  constructor(answerOnRetry: string | null = '鸡有3只，兔有5只') {
+    super()
+    this.answerOnRetry = answerOnRetry
+  }
+  override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    this.requests.push(options)
+    options.signal?.throwIfAborted()
+    if (this.requests.length > 1 && this.answerOnRetry !== null) {
+      yield { type: 'text-delta', index: 0, text: this.answerOnRetry }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+      return
+    }
+    yield { type: 'reasoning-delta', index: 0, text: '让我先思考一下……' }
+    yield { type: 'finish', reason: { kind: 'max-tokens' } }
+  }
+}
+
 /** Adapter that waits for release(), honoring the abort signal. */
 class GatedAdapter extends LlmAdapter {
   readonly requests: GenerateOptions[] = []
@@ -1150,6 +1174,105 @@ describe('generateSuggestion direct boundary', () => {
       .join(' ')
     expect(framed).toContain('新问题')
     expect(framed).not.toContain('旧问题')
+  })
+})
+
+describe('thinking-model suggestions', () => {
+  it('retries a reasoning-only reply with a larger output budget', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    contexts.push(ctx)
+    const warn = vi.spyOn(ctx.logger, 'warn')
+    const adapter = new ThinkingAdapter()
+    ctx.llm.registerAdapter(['main'], adapter)
+    const session = Session.create(SessionId('thinking-retry'))
+    appendTurn(session, 1, '问题', '回答')
+
+    const result = await generateSuggestion(
+      ctx,
+      resolveSuggestPromptConfig(CONFIG),
+      session,
+      1,
+      foldTranscript(session),
+      new AbortController().signal,
+    )
+
+    expect(result?.text).toBe('鸡有3只，兔有5只')
+    expect(adapter.requests).toHaveLength(2)
+    expect(adapter.requests[1]?.maxTokens).toBeGreaterThan(adapter.requests[0]?.maxTokens ?? 0)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('reasoning-only'))
+  })
+
+  it('does not retry a genuine silent reply', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    contexts.push(ctx)
+    const warn = vi.spyOn(ctx.logger, 'warn')
+    const adapter = new ImmediateAdapter('')
+    ctx.llm.registerAdapter(['main'], adapter)
+    const session = Session.create(SessionId('genuine-silence'))
+    appendTurn(session, 1, '问题', '回答')
+
+    const result = await generateSuggestion(
+      ctx,
+      resolveSuggestPromptConfig(CONFIG),
+      session,
+      1,
+      foldTranscript(session),
+      new AbortController().signal,
+    )
+
+    expect(result).toBeUndefined()
+    expect(adapter.requests).toHaveLength(1)
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('still retries without the override when reasoning-off is rejected', async () => {
+    // The bare test adapter declares no reasoning capability, so the harness
+    // rejects the `off` attempt during call preparation, before dispatch. A
+    // successful suggestion therefore proves the retry without the override
+    // still runs (the refactor above kept that catch in place).
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    contexts.push(ctx)
+    const adapter = new ImmediateAdapter('run the tests')
+    ctx.llm.registerAdapter(['main'], adapter)
+    const session = Session.create(SessionId('unsupported-effort'))
+    appendTurn(session, 1, '问题', '回答')
+
+    const result = await generateSuggestion(
+      ctx,
+      resolveSuggestPromptConfig(CONFIG),
+      session,
+      1,
+      foldTranscript(session),
+      new AbortController().signal,
+    )
+
+    expect(result?.text).toBe('run the tests')
+    expect(adapter.requests).toHaveLength(1)
+  })
+
+  it('fails loudly when the larger budget still yields no text', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    contexts.push(ctx)
+    const warn = vi.spyOn(ctx.logger, 'warn')
+    const adapter = new ThinkingAdapter(null)
+    ctx.llm.registerAdapter(['main'], adapter)
+    const session = Session.create(SessionId('thinking-stuck'))
+    appendTurn(session, 1, '问题', '回答')
+
+    await expect(generateSuggestion(
+      ctx,
+      resolveSuggestPromptConfig(CONFIG),
+      session,
+      1,
+      foldTranscript(session),
+      new AbortController().signal,
+    )).rejects.toThrow(/reasoning-only/)
+    expect(adapter.requests).toHaveLength(2)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('reasoning-only'))
   })
 })
 
